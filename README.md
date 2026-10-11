@@ -81,39 +81,6 @@ your keys itself, then checks them against the real echo.
 - mosh syncs screen state, so it can skip stale output on a slow link. foretype forwards
   every byte, so it hides typing lag, not output lag.
 
-## What it touches
-
-`foretype install` (run by `install.sh` with sudo) does exactly this:
-
-- copies the binary to `/usr/local/bin/foretype` and links `/usr/local/bin/foretype-shell` to it
-- saves your current shell in `~/.config/foretype/shell`
-- checks that `foretype-shell -c` runs your real shell, then adds it to `/etc/shells`
-- sets it as your login shell with `chsh` (`dscl` on macOS if `chsh` fails)
-
-`sudo foretype uninstall` restores your shell and removes all of the above. Root is only
-needed for those two commands.
-
-foretype opens no network connections, sends no telemetry, and writes nothing to disk
-while running. The one exception is `FORETYPE_LOG=<file>`, an opt-in debug log of
-timings and cursor positions, not of what you type. `FORETYPE=off` starts terminals
-without it.
-
-It is about 2,900 lines of Rust plus 2,200 lines of tests. Start with
-`src/install.rs` (what install changes), `src/shell.rs` (how your real shell is
-started) and `src/predict.rs` (what gets drawn).
-
-## Limitations
-
-- Predicts printable ASCII only. Accents, CJK, emoji and IME input pass through
-  unpredicted.
-- The echo rule is a heuristic. A program that echoes part of a line and then stops
-  echoing on that same line, without a newline, would get its next keys predicted.
-- Full-screen apps follow the same rule; a change of screen mode, size or row drops the
-  prediction.
-- Terminals that don't answer cursor queries get plain passthrough.
-- If foretype can't start, it runs your real shell directly. If it fails mid-session,
-  that tab ends; new tabs start fresh.
-
 ## License
 
 Apache-2.0
