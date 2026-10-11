@@ -638,6 +638,23 @@ fn a_laggy_program_is_boosted_after_its_first_echo() {
 }
 
 #[test]
+fn slow_links_keep_predictions_until_the_echo_arrives() {
+    let mut rig = Rig::measuring();
+    rig.remote(b"$ ");
+    rig.type_keys(b"a");
+    rig.advance(Duration::from_millis(800));
+    rig.remote(b"a");
+    rig.type_keys(b"bc");
+    assert_eq!(rig.terminal.row(0), "$ abc");
+    // Longer than the default 750 ms lifetime, still within this link's round trip.
+    rig.advance(Duration::from_millis(790));
+    assert_eq!(rig.terminal.row(0), "$ abc");
+    rig.remote(b"bc");
+    rig.assert_authoritative();
+    assert_eq!(rig.session.predictor.stats.discarded, 0);
+}
+
+#[test]
 fn boosting_stops_when_the_echo_becomes_fast() {
     let mut rig = Rig::new();
     rig.remote(b"$ ");

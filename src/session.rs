@@ -270,6 +270,7 @@ impl Session {
         }
         self.foreground = group;
         self.echo_ms = None;
+        self.predictor.adapt_lifetime(0.0);
         self.samples_seen = self.predictor.stats.echo_ms.len();
         self.predictor.clear();
         if self.boosting {
@@ -294,6 +295,7 @@ impl Session {
         }
         self.samples_seen = samples.len();
         let echo = self.echo_ms.unwrap_or(0.0);
+        self.predictor.adapt_lifetime(echo);
         if !self.boosting && echo > BOOST_ABOVE_MS {
             crate::log!("echo {echo:.0} ms: boosting");
             self.boosting = true;

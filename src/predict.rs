@@ -19,6 +19,8 @@ use std::time::{Duration, Instant};
 
 pub const DEFAULT_LIFETIME: Duration = Duration::from_millis(750);
 pub const SETTLE: Duration = Duration::from_millis(30);
+/// How long a line that is still learning its echo waits for it.
+const LEARNING_LIFETIME: Duration = Duration::from_secs(5);
 const MAX_TEXT: usize = 256;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -126,6 +128,8 @@ pub struct Predictor {
     line: Option<PredictedLine>,
     next_id: u64,
     lifetime: Duration,
+    /// The configured floor for `lifetime`; slower links stretch it.
+    minimum_lifetime: Duration,
     /// Underline characters the remote side has not echoed yet. Off by default:
     /// predictions are drawn exactly as the real echo will look.
     pub underline: bool,
@@ -235,6 +239,13 @@ impl PredictedLine {
     fn deadline(&self, lifetime: Duration) -> Option<Instant> {
         // Only outstanding input can time out. Pausing at a confirmed, unchanged
         // prompt must not turn the next character into another network round trip.
+        // The lifetime exists to take back what is on screen; while nothing can be
+        // shown yet, wait longer so the first echo on a slow link is still learned.
+        let lifetime = if self.trained && self.verify == Verify::Verified {
+            lifetime
+        } else {
+            lifetime.max(LEARNING_LIFETIME)
+        };
         let pending = self
             .pending
             .front()
@@ -302,9 +313,17 @@ impl Predictor {
             line: None,
             next_id: 1,
             lifetime,
+            minimum_lifetime: lifetime,
             underline: false,
             stats: Stats::default(),
         }
+    }
+
+    /// Gives unconfirmed characters time to be echoed on slow links: a prediction
+    /// may wait about three typical round trips before it is considered lost.
+    pub fn adapt_lifetime(&mut self, echo_ms: f64) {
+        let stretched = Duration::from_secs_f64((echo_ms * 3.0 / 1000.0).clamp(0.0, 5.0));
+        self.lifetime = self.minimum_lifetime.max(stretched);
     }
 
     pub fn has_pending(&self) -> bool {
@@ -896,7 +915,10 @@ mod tests {
         assert!(!record(&mut prediction, &prompt, "secret", now));
         prediction.observe(surface(&prompt), now + Duration::from_millis(500));
         assert!(prediction.overlay(surface(&prompt)).is_none());
+        // Nothing is ever shown; the unanswered line is dropped once learning gives up.
         prediction.expire(now + DEFAULT_LIFETIME);
+        assert!(prediction.overlay(surface(&prompt)).is_none());
+        prediction.expire(now + LEARNING_LIFETIME);
         assert!(!prediction.has_pending());
     }
 
