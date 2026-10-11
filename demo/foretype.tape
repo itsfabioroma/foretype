@@ -1,12 +1,12 @@
 # One terminal, two panes, every keystroke sent to both at the same instant:
-# plain ssh on top, foretype below. Typing follows a human rhythm (bursts within
+# foretype on top, plain ssh below. Typing follows a human rhythm (bursts within
 # words, beats between them). Render with demo/render.sh, which sets up the panes.
 Output demo/recording.gif
 
 Set Shell "zsh"
-Set FontSize 22
-Set Width 900
-Set Height 380
+Set FontSize 20
+Set Width 1040
+Set Height 360
 Set Padding 16
 Set Framerate 30
 Set TypingSpeed 1ms
@@ -18,29 +18,29 @@ Type "tmux -L foretype-demo attach -t demo" Enter
 Sleep 1500ms
 Show
 
-Sleep 700ms
+Sleep 500ms
 Type "s"
-Sleep 67ms
+Sleep 30ms
 Type "s"
-Sleep 96ms
+Sleep 43ms
 Type "h"
-Sleep 107ms
+Sleep 47ms
 Type " "
-Sleep 192ms
+Sleep 76ms
 Type "d"
-Sleep 80ms
+Sleep 35ms
 Type "e"
-Sleep 97ms
+Sleep 43ms
 Type "v"
-Sleep 80ms
+Sleep 35ms
 Type "b"
-Sleep 96ms
+Sleep 43ms
 Type "o"
-Sleep 70ms
+Sleep 31ms
 Type "x"
-Sleep 350ms
+Sleep 150ms
 Enter
-Sleep 1800ms
+Sleep 1200ms
 Type "e"
 Sleep 61ms
 Type "c"
@@ -84,13 +84,13 @@ Sleep 96ms
 Type "c"
 Sleep 76ms
 Type "a"
-Sleep 38ms
+Sleep 32ms
 Type "l"
 Sleep 87ms
 Type ","
 Sleep 40ms
 Type " "
-Sleep 480ms
+Sleep 420ms
 Type "n"
 Sleep 68ms
 Type "o"
@@ -104,7 +104,7 @@ Sleep 59ms
 Type "r"
 Sleep 53ms
 Type "e"
-Sleep 38ms
+Sleep 30ms
 Type " "
 Sleep 120ms
 Type "t"
@@ -126,6 +126,54 @@ Sleep 88ms
 Type "a"
 Sleep 86ms
 Type "g"
+Sleep 83ms
+Type "."
+Sleep 75ms
+Type " "
+Sleep 650ms
+Type "b"
+Sleep 73ms
+Type "t"
+Sleep 65ms
+Type "w"
+Sleep 58ms
+Type ","
+Sleep 78ms
+Type " "
+Sleep 158ms
+Type "w"
+Sleep 68ms
+Type "h"
+Sleep 93ms
+Type "o"
+Sleep 69ms
+Type " "
+Sleep 119ms
+Type "i"
+Sleep 58ms
+Type "s"
+Sleep 66ms
+Type " "
+Sleep 196ms
+Type "J"
+Sleep 70ms
+Type "o"
+Sleep 81ms
+Type "h"
+Sleep 43ms
+Type "n"
+Sleep 121ms
+Type " "
+Sleep 125ms
+Type "G"
+Sleep 94ms
+Type "a"
+Sleep 97ms
+Type "l"
+Sleep 96ms
+Type "t"
+Sleep 73ms
+Type "?"
 Sleep 200ms
 Type '"'
 Sleep 900ms

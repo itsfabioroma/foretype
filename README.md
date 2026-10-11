@@ -16,9 +16,9 @@
 <br>
 
 <p align="center">
-  <img src="demo/typing.gif" alt="Plain ssh on top, foretype below, same keystrokes at the same time">
+  <img src="demo/remote-made-local.gif" alt="foretype on top, plain ssh below, same keystrokes at the same time">
   <br>
-  <sub>Top: plain ssh. Bottom: foretype. Same keys at the same moment, to a server ~440 ms away.</sub>
+  <sub>Top: foretype. Bottom: plain ssh. Same keys at the same moment, to a server ~440 ms away.</sub>
 </p>
 
 ```
