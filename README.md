@@ -41,10 +41,7 @@ git clone https://github.com/itsfabioroma/foretype && cd foretype
 
 Open a new terminal tab. That's it. Typing into anything slow now feels instant: ssh,
 `kubectl exec`, `docker exec`, a coding agent on a far box. Nothing to install on the
-server.
-
-foretype becomes your login shell and runs your real shell inside it, so your prompt and
-config stay the same.
+server, and your shell, prompt and config stay the same.
 
 ```sh
 foretype status             # is this tab boosted?
@@ -53,12 +50,19 @@ sudo foretype uninstall     # put your old shell back
 
 ## How it works
 
-foretype becomes your login shell and runs your real shell in a pseudo-terminal,
-forwarding every byte unchanged. It mirrors the screen with a terminal emulator
-([vt100](https://crates.io/crates/vt100)) and times how long each key takes to echo.
-When the program in front is slower than 30 ms, foretype draws your keys itself, then
-checks them against the real echo.
+foretype is a single Rust binary. `foretype install` copies it to `/usr/local/bin`, adds
+`foretype-shell` to `/etc/shells`, makes that your login shell with `chsh`, and saves
+your old shell in `~/.config/foretype/shell`. Every new terminal tab, tmux pane and
+editor terminal then starts foretype, which runs your real shell in a pseudo-terminal
+and forwards every byte unchanged. It mirrors the screen with
+[vt100](https://crates.io/crates/vt100) and times how long each key takes to echo. When
+the program in front is slower than 30 ms, foretype draws your keys itself, then checks
+them against the real echo.
 
+- Only interactive terminals are wrapped. `-c` commands, scripts and pipes get your real
+  shell directly.
+- ssh, your shell config and the server are untouched. Root is only needed to install
+  and uninstall.
 - Predicts only after the program has echoed on that line, so passwords stay hidden.
 - Asks the terminal for its cursor position (`ESC [6n`) before drawing.
 - Restores the cursor before forwarding output, so the program's bytes land untouched.
