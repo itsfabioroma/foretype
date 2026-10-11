@@ -14,6 +14,7 @@ mod pty;
 mod scan;
 mod session;
 mod shell;
+mod ui;
 
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd};
@@ -25,21 +26,61 @@ use std::time::{Duration, Instant};
 
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 
-const USAGE: &str = "\
-foretype: remote made local. Instant remote typing with optimistic echo.
+/// `foretype help`: each command and what it does. An empty row starts a new group.
+const COMMANDS: &[(&str, &str)] = &[
+    (
+        "sudo foretype install",
+        "set up every new terminal (once; your shell stays the same)",
+    ),
+    ("sudo foretype uninstall", "undo it"),
+    ("foretype status", "is foretype active in this terminal?"),
+    ("", ""),
+    (
+        "foretype shell [-l]",
+        "try it in this terminal without installing",
+    ),
+];
 
-    sudo foretype install     set up every new terminal (once; your shell stays the same)
-    sudo foretype uninstall   undo it
-    foretype status           is foretype active in this terminal?
+const ENVIRONMENT: &[(&str, &str)] = &[
+    ("FORETYPE=off", "start terminals without foretype"),
+    (
+        "FORETYPE_TIMEOUT_MS=750",
+        "how long an unconfirmed character may stay on screen",
+    ),
+    (
+        "FORETYPE_UNDERLINE=1",
+        "underline characters the remote side has not echoed yet",
+    ),
+    ("FORETYPE_LOG=<file>", "write a debug log"),
+];
 
-    foretype shell [-l]       try it in this terminal without installing
+fn usage(style: ui::Style) -> String {
+    let header = style
+        .wordmark()
+        .unwrap_or_else(|| format!("  {}\n", style.title()));
+    format!(
+        "\n{header}\n  Remote made local. Instant remote typing with optimistic echo.\n\n  {}\n{}\n  {}\n{}\n",
+        style.bold("Commands"),
+        list(style, COMMANDS),
+        style.bold("Environment"),
+        list(style, ENVIRONMENT),
+    )
+}
 
-Environment:
-    FORETYPE=off              start terminals without foretype
-    FORETYPE_TIMEOUT_MS=750   how long an unconfirmed character may stay on screen
-    FORETYPE_UNDERLINE=1      underline characters the remote side has not echoed yet
-    FORETYPE_LOG=<file>       write a debug log
-";
+fn list(style: ui::Style, rows: &[(&str, &str)]) -> String {
+    let width = COMMANDS
+        .iter()
+        .chain(ENVIRONMENT)
+        .map(|(left, _)| left.len())
+        .max()
+        .unwrap_or(0);
+    rows.iter()
+        .map(|(left, right)| match *left {
+            "" => "\n".to_owned(),
+            _ => format!("{}\n", style.row(left, right, width)),
+        })
+        .collect()
+}
 
 fn main() -> ExitCode {
     let args: Vec<String> = std::env::args().collect();
@@ -62,12 +103,12 @@ fn main() -> ExitCode {
             ExitCode::SUCCESS
         }
         Some("-h" | "--help" | "help") | None => {
-            print!("{USAGE}");
+            print!("{}", usage(ui::Style::stdout()));
             ExitCode::SUCCESS
         }
         Some(other) => {
-            eprintln!("foretype: unknown command `{other}`\n");
-            eprint!("{USAGE}");
+            ui::Problem::new(format!("unknown command `{other}`")).print();
+            eprintln!("{}", list(ui::Style::stderr(), COMMANDS));
             ExitCode::from(2)
         }
     }
@@ -299,6 +340,7 @@ fn wait_briefly(shell: &mut std::process::Child) -> io::Result<std::process::Exi
 }
 
 fn print_stats(session: &session::Session) {
+    let style = ui::Style::stderr();
     let stats = &session.predictor.stats;
     let mut echo = stats.echo_ms.clone();
     echo.sort_by(f64::total_cmp);
@@ -307,14 +349,23 @@ fn print_stats(session: &session::Session) {
     } else {
         format!("{:.0} ms", echo[echo.len() / 2])
     };
+    let dot = style.dim(" · ");
     eprintln!(
-        "foretype: {} characters shown early, {} confirmed, {} withdrawn; median echo {}",
-        stats.shown, stats.confirmed, stats.discarded, median
+        "\n  {}  {} {}{dot}{} {}{dot}{} {}{dot}{} {}\n",
+        style.name(),
+        style.bold(stats.shown),
+        style.dim("shown early"),
+        style.bold(stats.confirmed),
+        style.dim("confirmed"),
+        style.bold(stats.discarded),
+        style.dim("withdrawn"),
+        style.dim("median echo"),
+        style.bold(median),
     );
     if session.cursor_checks_failed() > 0 {
         eprintln!(
-            "foretype: {} lines skipped because the local model disagreed with the terminal",
-            session.cursor_checks_failed()
+            "  {} lines skipped because the local model disagreed with the terminal\n",
+            style.bold(session.cursor_checks_failed())
         );
     }
 }

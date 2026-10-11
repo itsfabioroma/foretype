@@ -100,7 +100,9 @@ pub fn main(argv0: &str, args: &[String]) -> ExitCode {
                 crate::log!("setup failed, running the shell directly: {error}");
             }
             Err(crate::RunError::Session(error)) => {
-                eprintln!("foretype: {error}");
+                crate::ui::Problem::new("foretype stopped")
+                    .note(error)
+                    .print();
                 return ExitCode::from(1);
             }
         }
@@ -110,10 +112,14 @@ pub fn main(argv0: &str, args: &[String]) -> ExitCode {
         .args(args)
         .env("SHELL", &shell)
         .exec();
-    eprintln!("foretype: could not start {}: {error}", shell.display());
+    crate::ui::Problem::new(format!("foretype could not start {}", shell.display()))
+        .note(error)
+        .print();
     // Last resort so a broken configuration still yields a usable terminal.
     let error = Command::new("/bin/sh").arg0("-sh").exec();
-    eprintln!("foretype: could not start /bin/sh: {error}");
+    crate::ui::Problem::new("foretype could not start /bin/sh")
+        .note(error)
+        .print();
     ExitCode::from(127)
 }
 
