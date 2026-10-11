@@ -53,25 +53,18 @@ sudo foretype uninstall     # put your old shell back
 
 ## How it works
 
-foretype becomes your login shell. It runs your real shell in a pseudo-terminal and
-forwards every byte both ways, unchanged.
+foretype becomes your login shell and runs your real shell in a pseudo-terminal,
+forwarding every byte unchanged. It mirrors the screen with a terminal emulator
+([vt100](https://crates.io/crates/vt100)) and times how long each key takes to echo.
+When the program in front is slower than 30 ms, foretype draws your keys itself, then
+checks them against the real echo.
 
-It also feeds the output to a terminal emulator ([vt100](https://crates.io/crates/vt100))
-to keep its own copy of the screen, and times how long each key takes to echo. When the
-program in front is slower than 30 ms, foretype starts drawing your keys itself:
-
-- It only predicts printable keys at the end of a line where the program has already
-  echoed. Password prompts never echo, so they never get predictions.
-- Before drawing on a line, it asks the terminal where the cursor is (`ESC [6n`) and
-  only draws if that matches its copy.
-- It saves the cursor, draws the key in the style the echo will use, and restores the
-  cursor before forwarding any output. The program's bytes land where the program put
-  them.
-- When the echo arrives, it checks it against the guess. If it doesn't match, or nothing
-  comes back within 750 ms, it repaints those cells from its copy of the screen.
-
-Enter, editing keys, paste, clicks and resize stop predicting until the next echo. It
-hides typing lag, not network lag.
+- Predicts only after the program has echoed on that line, so passwords stay hidden.
+- Asks the terminal for its cursor position (`ESC [6n`) before drawing.
+- Restores the cursor before forwarding output, so the program's bytes land untouched.
+- Repaints from its screen copy if the echo differs or takes over 750 ms.
+- Pauses on Enter, editing keys, paste and resize.
+- Hides typing lag, not network lag.
 
 ## License
 
