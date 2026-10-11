@@ -26,7 +26,7 @@ use std::time::{Duration, Instant};
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 
 const USAGE: &str = "\
-foretype: make remote machines feel local.
+foretype: remote made local. Instant remote typing with optimistic echo.
 
     sudo foretype install     set up every new terminal (once; your shell stays the same)
     sudo foretype uninstall   undo it

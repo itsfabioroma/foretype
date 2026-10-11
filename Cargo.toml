@@ -2,7 +2,7 @@
 name = "foretype"
 version = "0.1.0"
 edition = "2024"
-description = "Make remote machines feel local: optimistic local echo for ssh and anything else that echoes slowly"
+description = "Remote made local: instant remote typing with optimistic echo"
 license = "Apache-2.0"
 repository = "https://github.com/itsfabioroma/foretype"
 keywords = ["ssh", "terminal", "latency", "local-echo", "remote"]

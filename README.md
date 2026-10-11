@@ -1,9 +1,8 @@
 # foretype
 
-**Make remote machines feel local.**
+**Remote made local.**
 
-A Rust tool that removes typing lag over ssh, and anything else remote, with optimistic
-local echo.
+foretype is a Rust tool that makes remote typing instant with optimistic echo.
 
 ```
                        without     with foretype
