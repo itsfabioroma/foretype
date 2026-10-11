@@ -1,0 +1,21 @@
+[package]
+name = "foretype"
+version = "0.1.0"
+edition = "2024"
+description = "Optimistic typing for interactive ssh: see what you type before the server echoes it"
+license = "Apache-2.0"
+repository = "https://github.com/itsfabioroma/foretype"
+keywords = ["ssh", "terminal", "latency", "local-echo", "mosh"]
+categories = ["command-line-utilities"]
+readme = "README.md"
+
+[profile.release]
+lto = true
+codegen-units = 1
+strip = true
+
+[dependencies]
+libc = "0.2.190"
+nix = { version = "0.31.3", features = ["term", "process", "signal", "poll", "fs", "ioctl"] }
+signal-hook = "0.4.5"
+vt100 = "0.16.2"
