@@ -1,13 +1,19 @@
-# foretype
+<div align="center">
+  <h1>foretype</h1>
+  <p><b>Remote made local.</b></p>
+  <p>Type on a server across the world like it's your laptop.</p>
+  <img alt="macOS and Linux" src="https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-000000?style=for-the-badge&labelColor=000000">
+  <img alt="Built with Rust" src="https://img.shields.io/badge/built%20with-Rust-000000?style=for-the-badge&logo=rust&labelColor=000000">
+  <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/github/license/itsfabioroma/foretype?style=for-the-badge&labelColor=000000&color=000000"></a>
+</div>
 
-**Remote made local.**
+<br>
 
-foretype is a Rust tool that makes remote typing instant with optimistic echo.
-
-![Plain ssh on top, foretype below, same keystrokes at the same time](demo/foretype.gif)
-
-<sub>One terminal, two panes, every keystroke sent to both at the same instant. The server is
-~440 ms away. Top: plain ssh. Bottom: with foretype. Rebuild with `demo/render.sh`.</sub>
+<p align="center">
+  <img src="demo/foretype.gif" alt="Plain ssh on top, foretype below, same keystrokes at the same time">
+  <br>
+  <sub>Top: plain ssh. Bottom: foretype. Same keys at the same moment, to a server ~440 ms away.</sub>
+</p>
 
 ```
                        without     with foretype
@@ -16,8 +22,7 @@ pi (agent) over ssh     148 ms        11 ms
 any laggy console       158 ms        10 ms
 ```
 
-<sub>Median keystroke-to-screen time to a server ~150 ms away, measured with
-`scripts/latency.py`.</sub>
+<sub>Median time from keypress to screen, server ~150 ms away. Measured with `scripts/latency.py`.</sub>
 
 ## Install
 
