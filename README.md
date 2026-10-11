@@ -7,7 +7,7 @@
   <br>
   <br>
   <p><b>Remote made local.</b></p>
-  <p>foretype is a Rust tool that makes remote typing instant with optimistic echo.</p>
+  <p>foretype is a Rust tool that forecasts your typing, making remote machines feel local by drawing each key before the server echoes it back.</p>
   <p>Like mosh's local echo, but for any terminal program, with nothing to install on the server.</p>
   <img alt="macOS and Linux" src="https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-000000?style=for-the-badge&labelColor=000000">
   <img alt="Built with Rust" src="https://img.shields.io/badge/built%20with-Rust-000000?style=for-the-badge&logo=rust&labelColor=000000">
