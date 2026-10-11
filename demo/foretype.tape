@@ -42,154 +42,156 @@ Sleep 150ms
 Enter
 Sleep 1200ms
 Type "p"
-Sleep 45ms
+Sleep 39ms
 Type "r"
-Sleep 80ms
+Sleep 39ms
 Type "i"
-Sleep 93ms
+Sleep 67ms
 Type "n"
-Sleep 60ms
+Sleep 30ms
 Type "t"
-Sleep 42ms
+Sleep 54ms
 Type "f"
-Sleep 70ms
+Sleep 30ms
 Type " "
-Sleep 133ms
+Sleep 88ms
 Type '"'
-Sleep 80ms
+Sleep 70ms
 Type "t"
-Sleep 48ms
+Sleep 35ms
 Type "h"
+Sleep 57ms
+Type "i"
 Sleep 61ms
-Type "i"
-Sleep 62ms
 Type "s"
-Sleep 60ms
+Sleep 64ms
 Type " "
-Sleep 178ms
+Sleep 116ms
 Type "i"
-Sleep 76ms
+Sleep 69ms
+Type "s"
+Sleep 51ms
+Type " "
+Sleep 116ms
+Type "m"
+Sleep 61ms
+Type "y"
+Sleep 67ms
+Type " "
+Sleep 120ms
+Type "v"
+Sleep 57ms
+Type "p"
+Sleep 69ms
 Type "s"
 Sleep 84ms
-Type " "
-Sleep 115ms
-Type "m"
-Sleep 40ms
-Type "y"
-Sleep 53ms
-Type " "
-Sleep 167ms
-Type "v"
-Sleep 59ms
-Type "p"
-Sleep 54ms
-Type "s"
-Sleep 46ms
 Type ","
-Sleep 74ms
+Sleep 37ms
+Type " "
+Sleep 94ms
+Type "b"
+Sleep 73ms
+Type "u"
+Sleep 70ms
+Type "t"
+Sleep 72ms
+Type " "
+Sleep 101ms
+Type "i"
+Sleep 84ms
+Type "t"
+Sleep 86ms
+Type " "
+Sleep 85ms
+Type "f"
+Sleep 59ms
+Type "e"
+Sleep 67ms
+Type "e"
+Sleep 87ms
+Type "l"
+Sleep 53ms
+Type "s"
+Sleep 47ms
+Type " "
+Sleep 111ms
+Type "l"
+Sleep 94ms
+Type "i"
+Sleep 73ms
+Type "k"
+Sleep 92ms
+Type "e"
+Sleep 69ms
+Type " "
+Sleep 134ms
+Type "m"
+Sleep 93ms
+Type "y"
+Sleep 52ms
+Type " "
+Sleep 106ms
+Type "M"
+Sleep 70ms
+Type "a"
+Sleep 67ms
+Type "c"
+Sleep 52ms
+Type "B"
+Sleep 43ms
+Type "o"
+Sleep 81ms
+Type "o"
+Sleep 39ms
+Type "k"
+Sleep 46ms
+Type "."
+Sleep 55ms
 Type " "
 Sleep 380ms
 Type "b"
-Sleep 75ms
-Type "u"
-Sleep 64ms
-Type "t"
-Sleep 70ms
-Type " "
-Sleep 134ms
-Type "i"
-Sleep 93ms
-Type "t"
 Sleep 51ms
-Type " "
-Sleep 169ms
-Type "f"
-Sleep 58ms
-Type "e"
-Sleep 98ms
-Type "e"
-Sleep 77ms
-Type "l"
-Sleep 87ms
-Type "s"
-Sleep 71ms
-Type " "
-Sleep 120ms
-Type "l"
-Sleep 74ms
-Type "i"
-Sleep 54ms
-Type "k"
-Sleep 76ms
-Type "e"
-Sleep 144ms
-Type " "
-Sleep 120ms
-Type "m"
-Sleep 70ms
-Type "y"
-Sleep 66ms
-Type " "
-Sleep 139ms
-Type "l"
-Sleep 53ms
-Type "a"
-Sleep 66ms
-Type "p"
-Sleep 71ms
 Type "t"
-Sleep 62ms
-Type "o"
+Sleep 49ms
+Type "w"
 Sleep 67ms
-Type "p"
-Sleep 86ms
-Type "."
-Sleep 83ms
-Type " "
-Sleep 650ms
-Type "b"
-Sleep 75ms
-Type "t"
-Sleep 73ms
-Type "w"
-Sleep 65ms
 Type ","
-Sleep 58ms
+Sleep 53ms
 Type " "
-Sleep 116ms
+Sleep 145ms
 Type "w"
-Sleep 30ms
+Sleep 47ms
 Type "h"
+Sleep 55ms
+Type "o"
+Sleep 52ms
+Type " "
+Sleep 87ms
+Type "i"
+Sleep 70ms
+Type "s"
+Sleep 52ms
+Type " "
+Sleep 136ms
+Type "J"
 Sleep 83ms
 Type "o"
-Sleep 65ms
-Type " "
-Sleep 190ms
-Type "i"
-Sleep 77ms
-Type "s"
-Sleep 82ms
-Type " "
-Sleep 153ms
-Type "J"
-Sleep 103ms
-Type "o"
-Sleep 88ms
+Sleep 59ms
 Type "h"
-Sleep 82ms
+Sleep 43ms
 Type "n"
-Sleep 108ms
+Sleep 71ms
 Type " "
-Sleep 125ms
+Sleep 86ms
 Type "G"
-Sleep 63ms
+Sleep 34ms
 Type "a"
-Sleep 94ms
+Sleep 63ms
 Type "l"
-Sleep 97ms
+Sleep 30ms
 Type "t"
-Sleep 96ms
+Sleep 30ms
 Type "?"
-Sleep 200ms
+Sleep 65ms
 Type '"'
 Sleep 3500ms
