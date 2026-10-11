@@ -10,7 +10,7 @@
 <br>
 
 <p align="center">
-  <img src="demo/foretype.gif" alt="Plain ssh on top, foretype below, same keystrokes at the same time">
+  <img src="demo/side-by-side.gif" alt="Plain ssh on top, foretype below, same keystrokes at the same time">
   <br>
   <sub>Top: plain ssh. Bottom: foretype. Same keys at the same moment, to a server ~440 ms away.</sub>
 </p>
