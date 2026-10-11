@@ -1,7 +1,7 @@
 <div align="center">
   <h1>foretype</h1>
   <p><b>Remote made local.</b></p>
-  <p>Type on a server across the world like it's your laptop.</p>
+  <p>foretype is a Rust tool that makes remote typing instant with optimistic echo.</p>
   <img alt="macOS and Linux" src="https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-000000?style=for-the-badge&labelColor=000000">
   <img alt="Built with Rust" src="https://img.shields.io/badge/built%20with-Rust-000000?style=for-the-badge&logo=rust&labelColor=000000">
   <a href="LICENSE"><img alt="License: Apache-2.0" src="https://img.shields.io/github/license/itsfabioroma/foretype?style=for-the-badge&labelColor=000000&color=000000"></a>
