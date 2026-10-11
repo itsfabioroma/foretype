@@ -46,6 +46,10 @@ pub fn spawn(
     attrs: Option<&Termios>,
 ) -> io::Result<Pty> {
     let pty = openpty(size.as_ref(), attrs).map_err(io::Error::from)?;
+    // Neither end may leak into the shell or its jobs: a job holding the master keeps
+    // the terminal from ever hanging up, so closing the window would not end it.
+    set_cloexec(pty.master.as_fd())?;
+    set_cloexec(pty.slave.as_fd())?;
     let tty = nix::unistd::ttyname(&pty.slave).map_err(io::Error::from)?;
     let mut command = Command::new(program);
     command
@@ -76,6 +80,12 @@ pub fn spawn(
         master: pty.master,
         child,
     })
+}
+
+fn set_cloexec(fd: BorrowedFd<'_>) -> io::Result<()> {
+    use nix::fcntl::{FcntlArg, FdFlag, fcntl};
+    fcntl(fd, FcntlArg::F_SETFD(FdFlag::FD_CLOEXEC)).map_err(io::Error::from)?;
+    Ok(())
 }
 
 pub fn set_nonblocking(fd: BorrowedFd<'_>) -> io::Result<()> {
@@ -111,5 +121,39 @@ impl RawMode {
 impl Drop for RawMode {
     fn drop(&mut self) {
         let _ = termios::tcsetattr(self.fd.as_fd(), SetArg::TCSADRAIN, &self.original);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_shell_inherits_only_its_terminal() {
+        let script =
+            "for f in 3 4 5 6 7 8 9; do [ -e /dev/fd/$f ] && echo leaked-$f; done; echo checked";
+        let mut pty = spawn(
+            std::path::Path::new("/bin/sh"),
+            "sh",
+            &["-c".to_owned(), script.to_owned()],
+            None,
+            None,
+        )
+        .unwrap();
+        let mut output = Vec::new();
+        let mut buffer = [0u8; 4096];
+        while let Ok(n) = nix::unistd::read(&pty.master, &mut buffer) {
+            if n == 0 {
+                break;
+            }
+            output.extend_from_slice(&buffer[..n]);
+            if output.windows(7).any(|window| window == b"checked") {
+                break;
+            }
+        }
+        let _ = pty.child.wait();
+        let text = String::from_utf8_lossy(&output);
+        assert!(text.contains("checked"), "{text}");
+        assert!(!text.contains("leaked"), "{text}");
     }
 }

@@ -257,9 +257,18 @@ fn proxy(
 
     let mut io = session::Io::default();
     session.finish(Instant::now(), &mut io);
-    write_all(stdout_fd, &io.terminal)?;
+    // The terminal may already be gone; that must not stop the shutdown below.
+    let _ = write_all(stdout_fd, &io.terminal);
     drop(raw);
-    let status = child.child.wait()?;
+    let pty::Pty {
+        master,
+        child: mut shell,
+    } = child;
+    // Close the pty before waiting, as a closing terminal window would. An exiting
+    // shell waits for its last output to be read, so waiting while holding the pty
+    // open but no longer reading it deadlocks.
+    drop(master);
+    let status = wait_briefly(&mut shell)?;
     if std::env::var_os("FORETYPE_STATS").is_some() {
         print_stats(&session);
     }
@@ -269,6 +278,21 @@ fn proxy(
         (None, Some(signal)) => ExitCode::from(u8::try_from(128 + signal).unwrap_or(255)),
         (None, None) => ExitCode::from(255),
     })
+}
+
+/// Waits for the shell to exit after its terminal closed, killing it if it lingers.
+fn wait_briefly(shell: &mut std::process::Child) -> io::Result<std::process::ExitStatus> {
+    let deadline = Instant::now() + Duration::from_secs(2);
+    loop {
+        if let Some(status) = shell.try_wait()? {
+            return Ok(status);
+        }
+        if Instant::now() >= deadline {
+            let _ = shell.kill();
+            return shell.wait();
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    }
 }
 
 fn print_stats(session: &session::Session) {
