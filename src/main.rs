@@ -45,7 +45,7 @@ const ENVIRONMENT: &[(&str, &str)] = &[
     ("FORETYPE=off", "start terminals without foretype"),
     (
         "FORETYPE_TIMEOUT_MS=750",
-        "how long an unconfirmed character may stay on screen",
+        "minimum time an unconfirmed character stays on screen; slow links stretch it",
     ),
     (
         "FORETYPE_UNDERLINE=1",
@@ -59,7 +59,7 @@ fn usage(style: ui::Style) -> String {
         .wordmark()
         .unwrap_or_else(|| format!("  {}\n", style.title()));
     format!(
-        "\n{header}\n  Remote made local. Instant remote typing with optimistic echo.\n\n  {}\n{}\n  {}\n{}\n",
+        "\n{header}\n  Type on remote machines at local speed.\n\n  {}\n{}\n  {}\n{}\n",
         style.bold("Commands"),
         list(style, COMMANDS),
         style.bold("Environment"),
