@@ -367,6 +367,32 @@ fn starting_below_existing_output_syncs_the_cursor_first() {
 }
 
 #[test]
+fn a_new_terminal_tab_learns_its_cursor_before_anything_is_slow() {
+    // macOS `login` prints a line before the login shell (foretype) starts.
+    let mut rig = Rig::measuring();
+    rig.terminal.render(b"Last login: Sun Oct 11 on ttys002\r\n");
+    let mut io = Io::default();
+    rig.session.sync_cursor(rig.now, &mut io);
+    rig.deliver(io);
+    rig.remote(b"local% ssh host\r\n$ ");
+    rig.type_keys(b"a");
+    rig.advance(Duration::from_millis(150));
+    rig.remote(b"a");
+    // The first line typed into the slow program is already predicted.
+    rig.type_keys(b"bc");
+    assert_eq!(rig.terminal.row(2), "$ abc");
+    assert!(rig.terminal.underlined(2, 3));
+    rig.remote(b"bc");
+    assert_eq!(rig.terminal.row(0), "Last login: Sun Oct 11 on ttys002");
+    assert!(!rig.terminal.underlined(2, 3));
+    assert_eq!(
+        rig.terminal.cursor(),
+        rig.session.shadow.screen().cursor_position()
+    );
+    assert_eq!(rig.session.cursor_checks_failed(), 0);
+}
+
+#[test]
 fn a_disagreeing_cursor_check_draws_nothing_and_resyncs_the_model() {
     let mut rig = started_mid_screen(false);
     rig.remote(b"$ ");

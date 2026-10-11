@@ -185,6 +185,9 @@ fn proxy(
     session.parse_in_background();
     session.predictor.underline = std::env::var("FORETYPE_UNDERLINE")
         .is_ok_and(|value| matches!(value.as_str(), "1" | "on" | "true" | "yes"));
+    let mut io = session::Io::default();
+    session.sync_cursor(Instant::now(), &mut io);
+    write_all(stdout_fd, &io.terminal)?;
     let mut to_child: Vec<u8> = Vec::new();
     let mut stdin_open = true;
     let mut buffer = vec![0u8; 64 * 1024];

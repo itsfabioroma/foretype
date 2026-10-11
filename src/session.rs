@@ -323,9 +323,10 @@ impl Session {
     }
 
     /// Asks the terminal where the cursor is. foretype usually starts below existing
-    /// output, and the remote side draws relative to wherever that is.
+    /// output (`login` prints "Last login" first), and the remote side draws relative
+    /// to wherever that is.
     pub fn sync_cursor(&mut self, now: Instant, io: &mut Io) {
-        if !self.enabled || !self.boosting || !self.can_inject() || self.saved {
+        if !self.enabled || !self.can_inject() || self.saved {
             return;
         }
         io.terminal.extend_from_slice(CURSOR_QUERY);
@@ -722,7 +723,9 @@ impl Session {
         self.dirty_since = None;
         self.shadow.screen_mut().set_size(rows, cols);
         self.display.screen_mut().set_size(rows, cols);
-        self.sync_cursor(now, io);
+        if self.boosting {
+            self.sync_cursor(now, io);
+        }
     }
 
     /// Before exit: forward anything held and remove our overlay.
