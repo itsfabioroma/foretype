@@ -1,25 +1,24 @@
-//! foretype: optimistic typing for interactive ssh.
+//! foretype: type the future.
 //!
-//! Installed as `ssh` ahead of the real one on the system PATH, so every program that
-//! runs ssh gets it. Interactive terminal sessions run through a local predictor that
-//! shows typed characters immediately; everything else (scp, rsync, git, remote
-//! commands, port forwards, pipes) is exec'd straight into the real ssh.
+//! Installed as the login shell, foretype runs the user's real shell on a pty of its own
+//! and passes everything through untouched. When the program in the foreground echoes
+//! slowly (ssh, kubectl exec, a remote console, anything far away), keystrokes are shown
+//! immediately and reconciled with what actually comes back.
 
-mod args;
 mod input;
 mod install;
 mod log;
+mod platform;
 mod predict;
 mod pty;
 mod scan;
 mod session;
+mod shell;
 
-use std::ffi::OsString;
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd};
-use std::os::unix::process::CommandExt as _;
-use std::path::{Path, PathBuf};
-use std::process::{Command, ExitCode};
+use std::path::Path;
+use std::process::ExitCode;
 use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::time::{Duration, Instant};
@@ -27,38 +26,35 @@ use std::time::{Duration, Instant};
 use nix::poll::{PollFd, PollFlags, PollTimeout, poll};
 
 const USAGE: &str = "\
-foretype: optimistic typing for interactive ssh
+foretype: make remote machines feel local.
 
-Install once; from then on every program that runs ssh gets it:
-    sudo foretype install     install as `ssh` in /usr/local/bin (ahead of /usr/bin/ssh)
-    foretype install --user   same, in ~/.local/bin, for your account only
-    foretype uninstall        remove it (add --user if installed with --user)
-    foretype status           show which ssh programs will run
+    sudo foretype install     set up every new terminal (once; your shell stays the same)
+    sudo foretype uninstall   undo it
+    foretype status           is foretype active in this terminal?
 
-    foretype ssh [args]       run one ssh session through foretype explicitly
+    foretype shell [-l]       try it in this terminal without installing
 
 Environment:
-    FORETYPE=off              run plain ssh for one command (FORETYPE=off ssh host)
+    FORETYPE=off              start terminals without foretype
     FORETYPE_TIMEOUT_MS=750   how long an unconfirmed character may stay on screen
-    FORETYPE_STATS=1          print a short summary when the session ends
     FORETYPE_LOG=<file>       write a debug log
 ";
 
 fn main() -> ExitCode {
-    let mut args: Vec<String> = std::env::args().collect();
-    let invoked_as_ssh = args
-        .first()
-        .and_then(|arg0| Path::new(arg0).file_name())
-        .is_some_and(|name| name == "ssh");
-    if invoked_as_ssh {
-        args.remove(0);
-        return ssh(&args);
+    let args: Vec<String> = std::env::args().collect();
+    let argv0 = args.first().cloned().unwrap_or_default();
+    let name = Path::new(&argv0)
+        .file_name()
+        .map(|name| name.to_string_lossy().trim_start_matches('-').to_owned())
+        .unwrap_or_default();
+    // Started as the login shell: `-foretype-shell`, or a terminal running it directly.
+    if name == shell::SHELL_NAME || argv0.starts_with('-') {
+        return shell::main(&argv0, &args[1..]);
     }
-    let command = args.get(1).map(String::as_str);
-    match command {
-        Some("ssh") => ssh(&args[2..]),
-        Some("install") => install::install(&args[2..]),
-        Some("uninstall") => install::uninstall(&args[2..]),
+    match args.get(1).map(String::as_str) {
+        Some("shell") => shell::main(&argv0, &args[2..]),
+        Some("install") => install::install(),
+        Some("uninstall") => install::uninstall(),
         Some("status") => install::status(),
         Some("-V" | "--version" | "version") => {
             println!("foretype {}", env!("CARGO_PKG_VERSION"));
@@ -76,61 +72,6 @@ fn main() -> ExitCode {
     }
 }
 
-/// Runs ssh with prediction when the session is an interactive terminal, and execs the
-/// real ssh directly otherwise.
-fn ssh(args: &[String]) -> ExitCode {
-    let Some(real) = find_real_ssh() else {
-        eprintln!("foretype: could not find ssh on PATH");
-        return ExitCode::from(127);
-    };
-    let disabled = std::env::var("FORETYPE").is_ok_and(|value| {
-        matches!(
-            value.to_ascii_lowercase().as_str(),
-            "0" | "off" | "false" | "no"
-        )
-    });
-    let stdin = io::stdin();
-    let stdout = io::stdout();
-    let terminal = nix::unistd::isatty(stdin.as_fd()).unwrap_or(false)
-        && nix::unistd::isatty(stdout.as_fd()).unwrap_or(false);
-    let dumb = std::env::var("TERM").map_or(true, |term| term.is_empty() || term == "dumb");
-    // ssh's own children (ProxyCommand, LocalCommand) that run `ssh` again.
-    let nested = std::env::var_os(ACTIVE).is_some();
-    if disabled || nested || dumb || !terminal || !args::interactive_ssh(args) {
-        let error = Command::new(&real).args(args).env(ACTIVE, "1").exec();
-        eprintln!("foretype: failed to run {}: {error}", real.display());
-        return ExitCode::from(127);
-    }
-    if let Ok(path) = std::env::var("FORETYPE_LOG") {
-        let _ = log::open(Path::new(&path));
-    }
-    match run(&real, args) {
-        Ok(code) => code,
-        Err(error) => {
-            eprintln!("foretype: {error}");
-            ExitCode::from(1)
-        }
-    }
-}
-
-const ACTIVE: &str = "FORETYPE_ACTIVE";
-
-/// The first `ssh` on PATH that is not foretype, falling back to the system one.
-pub(crate) fn find_real_ssh() -> Option<PathBuf> {
-    let path = std::env::var_os("PATH").unwrap_or_else(|| OsString::from("/usr/bin:/bin"));
-    std::env::split_paths(&path)
-        .map(|dir| dir.join("ssh"))
-        .chain([PathBuf::from("/usr/bin/ssh")])
-        .filter(|candidate| is_executable(candidate))
-        .find(|candidate| !install::is_foretype(candidate))
-}
-
-fn is_executable(path: &Path) -> bool {
-    use std::os::unix::fs::PermissionsExt as _;
-    path.metadata()
-        .is_ok_and(|meta| meta.is_file() && meta.permissions().mode() & 0o111 != 0)
-}
-
 fn lifetime() -> Duration {
     std::env::var("FORETYPE_TIMEOUT_MS")
         .ok()
@@ -139,16 +80,40 @@ fn lifetime() -> Duration {
         .map_or(predict::DEFAULT_LIFETIME, Duration::from_millis)
 }
 
-fn run(real: &Path, args: &[String]) -> io::Result<ExitCode> {
+pub enum RunError {
+    /// Nothing was started; the caller can still run the shell directly.
+    Setup(io::Error),
+    /// The session was running.
+    Session(io::Error),
+}
+
+/// Runs `program` on a pty of its own and proxies the terminal until it exits.
+pub fn run(program: &Path, arg0: &str, args: &[String]) -> Result<ExitCode, RunError> {
+    let stdin = io::stdin();
+    let stdout = io::stdout();
+    let size = pty::winsize(stdout.as_fd()).or_else(|| pty::winsize(stdin.as_fd()));
+    let raw = pty::RawMode::enable(stdin.as_fd()).map_err(RunError::Setup)?;
+    let child = match pty::spawn(program, arg0, args, size, Some(raw.original())) {
+        Ok(child) => child,
+        Err(error) => {
+            drop(raw);
+            return Err(RunError::Setup(error));
+        }
+    };
+    proxy(child, raw, size).map_err(RunError::Session)
+}
+
+fn proxy(
+    mut child: pty::Pty,
+    raw: pty::RawMode,
+    size: Option<nix::pty::Winsize>,
+) -> io::Result<ExitCode> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let stdin_fd = stdin.as_fd();
     let stdout_fd = stdout.as_fd();
 
-    let size = pty::winsize(stdout_fd).or_else(|| pty::winsize(stdin_fd));
     let (rows, cols) = size.map_or((24, 80), |size| (size.ws_row, size.ws_col));
-    let raw = pty::RawMode::enable(stdin_fd)?;
-    let mut child = pty::spawn(real, args, size, Some(raw.original()))?;
     pty::set_nonblocking(child.master.as_fd())?;
 
     let (signal_read, signal_write) = std::os::unix::net::UnixStream::pair()?;
@@ -175,9 +140,7 @@ fn run(real: &Path, args: &[String]) -> io::Result<ExitCode> {
     }
 
     let mut session = session::Session::new(rows, cols, true, lifetime());
-    let mut io = session::Io::default();
-    session.sync_cursor(Instant::now(), &mut io);
-    write_all(stdout_fd, &io.terminal)?;
+    session.parse_in_background();
     let mut to_child: Vec<u8> = Vec::new();
     let mut stdin_open = true;
     let mut buffer = vec![0u8; 64 * 1024];
@@ -222,6 +185,12 @@ fn run(real: &Path, args: &[String]) -> io::Result<ExitCode> {
 
         let now = Instant::now();
         let mut io = session::Io::default();
+        // Each foreground job is measured on its own; only laggy ones get prediction.
+        session.set_foreground(
+            platform::foreground_group(child.master.as_fd()),
+            now,
+            &mut io,
+        );
         if signal_ready {
             let mut sink = [0u8; 64];
             while matches!(io::Read::read(&mut &signal_read, &mut sink), Ok(n) if n > 0) {}
@@ -294,9 +263,11 @@ fn run(real: &Path, args: &[String]) -> io::Result<ExitCode> {
     if std::env::var_os("FORETYPE_STATS").is_some() {
         print_stats(&session);
     }
-    Ok(match status.code() {
-        Some(code) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
-        None => ExitCode::from(255),
+    use std::os::unix::process::ExitStatusExt as _;
+    Ok(match (status.code(), status.signal()) {
+        (Some(code), _) => ExitCode::from(u8::try_from(code).unwrap_or(1)),
+        (None, Some(signal)) => ExitCode::from(u8::try_from(128 + signal).unwrap_or(255)),
+        (None, None) => ExitCode::from(255),
     })
 }
 

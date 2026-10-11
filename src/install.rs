@@ -1,121 +1,250 @@
-//! Installing foretype as `ssh`.
+//! Installing foretype as the login shell.
 //!
-//! foretype is installed next to a symlink named `ssh` in a directory that comes before the
-//! real ssh on the system PATH (`/usr/local/bin` by default). Every program that runs
-//! `ssh` then runs foretype, which execs the real ssh untouched unless the session is an
-//! interactive terminal.
+//! `foretype-shell` (a link to the foretype binary) becomes the user's login shell, so
+//! every terminal, tmux pane and editor terminal starts inside foretype, which runs the
+//! user's real shell in a pty. ssh itself is never replaced.
 
 use std::io;
 use std::path::{Path, PathBuf};
-use std::process::ExitCode;
+use std::process::{Command, ExitCode};
 
-const SYSTEM_BIN: &str = "/usr/local/bin";
+use crate::shell::{SHELL_NAME, config_file};
 
-struct Options {
-    bin: PathBuf,
+const BIN: &str = "/usr/local/bin";
+const SHELLS: &str = "/etc/shells";
+
+fn binary() -> PathBuf {
+    Path::new(BIN).join("foretype")
 }
 
-fn options(args: &[String]) -> Result<Options, String> {
-    let mut bin = PathBuf::from(SYSTEM_BIN);
-    let mut args = args.iter();
-    while let Some(arg) = args.next() {
-        match arg.as_str() {
-            "--user" => {
-                bin = home().ok_or("HOME is not set")?.join(".local/bin");
-            }
-            "--bin-dir" => {
-                bin = PathBuf::from(args.next().ok_or("--bin-dir needs a directory")?);
-            }
-            other => return Err(format!("unknown option `{other}`")),
-        }
-    }
-    Ok(Options { bin })
-}
-
-fn home() -> Option<PathBuf> {
-    std::env::var_os("HOME").map(PathBuf::from)
-}
-
-fn current_exe() -> io::Result<PathBuf> {
-    std::env::current_exe()?.canonicalize()
+fn shell_link() -> PathBuf {
+    Path::new(BIN).join(SHELL_NAME)
 }
 
 /// Whether `path` is (a link to) a foretype binary.
 pub fn is_foretype(path: &Path) -> bool {
     path.canonicalize().is_ok_and(|real| {
         real.file_name().is_some_and(|name| name == "foretype")
-            || current_exe().is_ok_and(|me| me == real)
+            || std::env::current_exe()
+                .and_then(|exe| exe.canonicalize())
+                .is_ok_and(|me| me == real)
     })
 }
 
-fn permission_hint(error: &io::Error, verb: &str) -> String {
-    if error.kind() == io::ErrorKind::PermissionDenied {
+/// The account foretype is installed for: the user who ran sudo.
+fn account() -> Result<nix::unistd::User, String> {
+    if !nix::unistd::geteuid().is_root() {
         let exe = std::env::current_exe()
             .map(|path| path.display().to_string())
             .unwrap_or_else(|_| "foretype".into());
-        format!(
-            "{error}\n  {verb} {SYSTEM_BIN} needs root: sudo {exe} {verb}\n  (or `foretype {verb} --user` for ~/.local/bin, your account only)"
-        )
-    } else {
-        error.to_string()
+        return Err(format!(
+            "this changes your login shell and /etc/shells, so it needs root:\n  sudo {exe} {}",
+            std::env::args().nth(1).unwrap_or_default()
+        ));
     }
+    let name = std::env::var("SUDO_USER")
+        .ok()
+        .filter(|name| name != "root")
+        .ok_or("run it with sudo from your own account, not as root")?;
+    nix::unistd::User::from_name(&name)
+        .map_err(|error| error.to_string())?
+        .ok_or_else(|| format!("no such user `{name}`"))
 }
 
-pub fn install(args: &[String]) -> ExitCode {
-    let options = match options(args) {
-        Ok(options) => options,
+pub fn install() -> ExitCode {
+    let user = match account() {
+        Ok(user) => user,
         Err(error) => {
             eprintln!("foretype: {error}");
-            return ExitCode::from(2);
+            return ExitCode::from(1);
         }
     };
-    match install_into(&options) {
+    match install_for(&user) {
         Ok(()) => {
-            report(&options.bin);
+            println!(
+                "foretype: done. Open a new terminal tab; anything remote you type into there feels local."
+            );
+            println!("foretype: undo with `sudo foretype uninstall`.");
             ExitCode::SUCCESS
         }
         Err(error) => {
-            eprintln!(
-                "foretype: install failed: {}",
-                permission_hint(&error, "install")
-            );
+            eprintln!("foretype: install failed: {error}");
             ExitCode::from(1)
         }
     }
 }
 
-fn install_into(options: &Options) -> io::Result<()> {
-    let me = current_exe()?;
-    std::fs::create_dir_all(&options.bin)?;
-    let binary = options.bin.join("foretype");
-    let shim = options.bin.join("ssh");
-
-    // Refuse to replace an ssh that is not ours before changing anything.
-    if let Ok(meta) = std::fs::symlink_metadata(&shim)
-        && !(meta.file_type().is_symlink() && is_foretype(&shim))
-    {
-        return Err(io::Error::new(
-            io::ErrorKind::AlreadyExists,
-            format!(
-                "{} exists and is not foretype; not touching it",
-                shim.display()
-            ),
-        ));
-    }
-
-    if binary.canonicalize().ok() != Some(me.clone()) {
+fn install_for(user: &nix::unistd::User) -> io::Result<()> {
+    let me = std::env::current_exe()?.canonicalize()?;
+    std::fs::create_dir_all(BIN)?;
+    if binary().canonicalize().ok() != Some(me.clone()) {
         // Copy then rename, so a running foretype is never replaced half written.
-        let partial = options.bin.join(".foretype.partial");
+        let partial = Path::new(BIN).join(".foretype.partial");
         std::fs::copy(&me, &partial)?;
         set_mode(&partial, 0o755)?;
-        std::fs::rename(&partial, &binary)?;
-        println!("foretype: installed {}", binary.display());
+        std::fs::rename(&partial, binary())?;
+        println!("foretype: installed {}", binary().display());
     }
-    if std::fs::symlink_metadata(&shim).is_err() {
-        std::os::unix::fs::symlink("foretype", &shim)?;
-        println!("foretype: linked {} -> foretype", shim.display());
+    if std::fs::symlink_metadata(shell_link()).is_err() {
+        std::os::unix::fs::symlink("foretype", shell_link())?;
+        println!("foretype: linked {} -> foretype", shell_link().display());
+    }
+
+    // Remember the real shell before the login shell changes.
+    let current = user.shell.clone();
+    let config = config_file(&user.dir);
+    if !is_foretype(&current) {
+        if let Some(dir) = config.parent() {
+            std::fs::create_dir_all(dir)?;
+            chown(dir, user)?;
+        }
+        std::fs::write(&config, format!("{}\n", current.display()))?;
+        chown(&config, user)?;
+        println!("foretype: your shell stays {}", current.display());
+    }
+    let real = std::fs::read_to_string(&config)
+        .ok()
+        .and_then(|text| text.lines().next().map(|line| PathBuf::from(line.trim())))
+        .unwrap_or_else(|| current.clone());
+
+    // Prove the wrapper starts the real shell before anyone depends on it.
+    let status = Command::new(shell_link())
+        .args(["-c", "exit 7"])
+        .env("FORETYPE_SHELL", &real)
+        .status()?;
+    if status.code() != Some(7) {
+        return Err(io::Error::other(format!(
+            "{} -c failed self-test ({status}); login shell left unchanged",
+            shell_link().display()
+        )));
+    }
+
+    let shells = std::fs::read_to_string(SHELLS).unwrap_or_default();
+    if let Some(updated) = with_shell(&shells, &shell_link()) {
+        std::fs::write(SHELLS, updated)?;
+        println!(
+            "foretype: registered {} in {SHELLS}",
+            shell_link().display()
+        );
+    }
+    if !is_foretype(&current) {
+        set_login_shell(&user.name, &shell_link())?;
+        println!(
+            "foretype: login shell for {} is now {}",
+            user.name,
+            shell_link().display()
+        );
     }
     Ok(())
+}
+
+pub fn uninstall() -> ExitCode {
+    let user = match account() {
+        Ok(user) => user,
+        Err(error) => {
+            eprintln!("foretype: {error}");
+            return ExitCode::from(1);
+        }
+    };
+    match uninstall_for(&user) {
+        Ok(()) => {
+            println!("foretype: removed. New terminal tabs start your shell directly again.");
+            ExitCode::SUCCESS
+        }
+        Err(error) => {
+            eprintln!("foretype: uninstall failed: {error}");
+            ExitCode::from(1)
+        }
+    }
+}
+
+fn uninstall_for(user: &nix::unistd::User) -> io::Result<()> {
+    let config = config_file(&user.dir);
+    if is_foretype(&user.shell) {
+        let real = std::fs::read_to_string(&config)
+            .ok()
+            .and_then(|text| text.lines().next().map(|line| PathBuf::from(line.trim())))
+            .filter(|path| path.is_file())
+            .unwrap_or_else(|| PathBuf::from("/bin/zsh"));
+        set_login_shell(&user.name, &real)?;
+        println!(
+            "foretype: login shell for {} is {} again",
+            user.name,
+            real.display()
+        );
+    }
+    let shells = std::fs::read_to_string(SHELLS).unwrap_or_default();
+    let updated = without_shell(&shells, &shell_link());
+    if updated != shells {
+        std::fs::write(SHELLS, updated)?;
+        println!("foretype: removed {} from {SHELLS}", shell_link().display());
+    }
+    for path in [shell_link(), binary(), config] {
+        if std::fs::symlink_metadata(&path).is_ok() {
+            std::fs::remove_file(&path)?;
+            println!("foretype: removed {}", path.display());
+        }
+    }
+    Ok(())
+}
+
+pub fn status() -> ExitCode {
+    println!("foretype {}", env!("CARGO_PKG_VERSION"));
+    let user = nix::unistd::User::from_uid(nix::unistd::getuid())
+        .ok()
+        .flatten();
+    let installed = user.as_ref().is_some_and(|user| is_foretype(&user.shell));
+    if let Some(user) = &user {
+        println!(
+            "  login shell    {}{}",
+            user.shell.display(),
+            if installed { " (foretype)" } else { "" }
+        );
+    }
+    println!("  real shell     {}", crate::shell::real_shell().display());
+    let stdin = std::io::stdin();
+    let wrapped = std::env::var_os(crate::shell::TTY_VAR).is_some_and(|tty| {
+        nix::unistd::ttyname(std::os::fd::AsFd::as_fd(&stdin))
+            .is_ok_and(|current| current.as_os_str() == tty)
+    });
+    println!(
+        "  this terminal  {}",
+        if wrapped {
+            "active: slow programs get instant typing"
+        } else {
+            "not running inside foretype"
+        }
+    );
+    if installed {
+        ExitCode::SUCCESS
+    } else {
+        println!("  install with   sudo foretype install");
+        ExitCode::from(1)
+    }
+}
+
+fn set_login_shell(user: &str, shell: &Path) -> io::Result<()> {
+    let status = Command::new("chsh").arg("-s").arg(shell).arg(user).status();
+    if status.as_ref().is_ok_and(|status| status.success()) {
+        return Ok(());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let status = Command::new("dscl")
+            .args([".", "-create", &format!("/Users/{user}"), "UserShell"])
+            .arg(shell)
+            .status()?;
+        if status.success() {
+            return Ok(());
+        }
+    }
+    Err(io::Error::other(format!(
+        "could not set the login shell of {user}"
+    )))
+}
+
+fn chown(path: &Path, user: &nix::unistd::User) -> io::Result<()> {
+    nix::unistd::chown(path, Some(user.uid), Some(user.gid)).map_err(io::Error::from)
 }
 
 fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
@@ -123,156 +252,52 @@ fn set_mode(path: &Path, mode: u32) -> io::Result<()> {
     std::fs::set_permissions(path, std::fs::Permissions::from_mode(mode))
 }
 
-pub fn uninstall(args: &[String]) -> ExitCode {
-    let options = match options(args) {
-        Ok(options) => options,
-        Err(error) => {
-            eprintln!("foretype: {error}");
-            return ExitCode::from(2);
-        }
-    };
-    let shim = options.bin.join("ssh");
-    let binary = options.bin.join("foretype");
-    let mut result = Ok(());
-    if std::fs::symlink_metadata(&shim).is_ok_and(|meta| meta.file_type().is_symlink())
-        && is_foretype(&shim)
-    {
-        result = std::fs::remove_file(&shim).map(|()| {
-            println!("foretype: removed {}", shim.display());
-        });
+/// `/etc/shells` with `shell` appended, or None if it is already listed.
+fn with_shell(shells: &str, shell: &Path) -> Option<String> {
+    let line = shell.display().to_string();
+    if shells.lines().any(|existing| existing.trim() == line) {
+        return None;
     }
-    if result.is_ok() && binary.exists() {
-        result = std::fs::remove_file(&binary).map(|()| {
-            println!("foretype: removed {}", binary.display());
-        });
+    let mut updated = shells.to_owned();
+    if !updated.is_empty() && !updated.ends_with('\n') {
+        updated.push('\n');
     }
-    match result {
-        Ok(()) => {
-            println!("foretype: ssh is plain ssh again");
-            ExitCode::SUCCESS
-        }
-        Err(error) => {
-            eprintln!(
-                "foretype: uninstall failed: {}",
-                permission_hint(&error, "uninstall")
-            );
-            ExitCode::from(1)
-        }
-    }
+    updated.push_str(&line);
+    updated.push('\n');
+    Some(updated)
 }
 
-/// Where `ssh` resolves on a PATH.
-fn resolve(path: &std::ffi::OsStr) -> Option<PathBuf> {
-    std::env::split_paths(path)
-        .map(|dir| dir.join("ssh"))
-        .find(|candidate| candidate.is_file())
-}
-
-/// The PATH login shells and terminals get from `/etc/paths` (macOS, also typical Linux).
-fn system_path() -> std::ffi::OsString {
-    let listed = std::fs::read_to_string("/etc/paths").ok().map(|paths| {
-        paths
-            .lines()
-            .map(str::trim)
-            .filter(|line| !line.is_empty())
-            .collect::<Vec<_>>()
-            .join(":")
-    });
-    listed
-        .unwrap_or_else(|| "/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin".into())
-        .into()
-}
-
-fn describe(label: &str, path: Option<PathBuf>) -> bool {
-    match path {
-        Some(path) if is_foretype(&path) => {
-            println!("  {label:<14} ssh -> {} (foretype)", path.display());
-            true
-        }
-        Some(path) => {
-            println!("  {label:<14} ssh -> {} (not foretype)", path.display());
-            false
-        }
-        None => {
-            println!("  {label:<14} ssh not found");
-            false
-        }
-    }
-}
-
-fn report(bin: &Path) {
-    println!("foretype: ssh resolution");
-    let current = std::env::var_os("PATH").unwrap_or_default();
-    let here = describe("this shell", resolve(&current));
-    let system = describe("system PATH", resolve(&system_path()));
-    match crate::find_real_ssh() {
-        Some(real) => println!("  {:<14} {}", "real ssh", real.display()),
-        None => println!("  {:<14} not found", "real ssh"),
-    }
-    if !here || !system {
-        let on_path = std::env::split_paths(&current).any(|dir| dir == bin);
-        if !on_path {
-            println!(
-                "foretype: {} is not on this PATH; add it before {} to activate",
-                bin.display(),
-                crate::find_real_ssh()
-                    .and_then(|real| real.parent().map(Path::to_path_buf))
-                    .map_or_else(|| "/usr/bin".to_owned(), |dir| dir.display().to_string())
-            );
-        } else if !here {
-            println!("foretype: another ssh comes first on this PATH; foretype is not active here");
-        }
-    }
-    println!("foretype: open a new terminal tab; programs started there get it too.");
-}
-
-pub fn status() -> ExitCode {
-    let current = std::env::var_os("PATH").unwrap_or_default();
-    println!("foretype {}", env!("CARGO_PKG_VERSION"));
-    let here = describe("this shell", resolve(&current));
-    let system = describe("system PATH", resolve(&system_path()));
-    match crate::find_real_ssh() {
-        Some(real) => println!("  {:<14} {}", "real ssh", real.display()),
-        None => println!("  {:<14} not found", "real ssh"),
-    }
-    if here || system {
-        ExitCode::SUCCESS
-    } else {
-        ExitCode::from(1)
-    }
+fn without_shell(shells: &str, shell: &Path) -> String {
+    let line = shell.display().to_string();
+    shells
+        .split_inclusive('\n')
+        .filter(|existing| existing.trim() != line)
+        .collect()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn scratch(name: &str) -> PathBuf {
-        let dir =
-            std::env::temp_dir().join(format!("foretype-install-{name}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        dir
+    #[test]
+    fn etc_shells_edits_are_idempotent() {
+        let shell = Path::new("/usr/local/bin/foretype-shell");
+        let original = "# List of acceptable shells\n/bin/bash\n/bin/zsh\n";
+        let added = with_shell(original, shell).unwrap();
+        assert_eq!(added, format!("{original}/usr/local/bin/foretype-shell\n"));
+        assert!(with_shell(&added, shell).is_none());
+        assert_eq!(without_shell(&added, shell), original);
+        assert_eq!(without_shell(original, shell), original);
+        assert_eq!(
+            with_shell("/bin/sh", shell).unwrap(),
+            "/bin/sh\n/usr/local/bin/foretype-shell\n"
+        );
     }
 
     #[test]
-    fn installs_a_shim_and_refuses_foreign_ssh() {
-        let bin = scratch("shim");
-        let options = Options { bin: bin.clone() };
-        install_into(&options).unwrap();
-        assert!(is_foretype(&bin.join("ssh")));
-        assert!(bin.join("foretype").is_file());
-        // Installing again is a no-op.
-        install_into(&options).unwrap();
-
-        let foreign = scratch("foreign");
-        std::fs::create_dir_all(&foreign).unwrap();
-        std::fs::write(foreign.join("ssh"), "#!/bin/sh\n").unwrap();
-        let error = install_into(&Options {
-            bin: foreign.clone(),
-        })
-        .unwrap_err();
-        assert_eq!(error.kind(), io::ErrorKind::AlreadyExists);
-        assert!(!foreign.join("foretype").exists());
-        let _ = std::fs::remove_dir_all(bin);
-        let _ = std::fs::remove_dir_all(foreign);
+    fn installing_needs_root() {
+        if !nix::unistd::geteuid().is_root() {
+            assert!(account().is_err());
+        }
     }
 }

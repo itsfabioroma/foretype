@@ -13,6 +13,9 @@
 //! depends on its saved cursor.
 
 use std::collections::VecDeque;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use crate::input::{InputParser, Key, Token};
@@ -29,12 +32,59 @@ const INPUT_TIMEOUT: Duration = Duration::from_millis(10);
 const QUERY_TIMEOUT: Duration = Duration::from_secs(1);
 /// Repair leftovers without DECSC if the application holds its saved cursor this long.
 const FALLBACK_REPAIR: Duration = Duration::from_millis(100);
+/// Prediction is shown once the foreground program's typical echo is slower than this
+/// (milliseconds), and stops again below the lower bound. Local programs echo in about
+/// a millisecond and are never touched.
+const BOOST_ABOVE_MS: f64 = 30.0;
+const BOOST_BELOW_MS: f64 = 12.0;
+/// A keystroke waits for the background model to catch up only if at most this much
+/// output is still unparsed (well under a millisecond); otherwise it goes through
+/// unmeasured.
+const CATCH_UP_LIMIT: usize = 64 * 1024;
 
 const SAVE: &[u8] = b"\x1b7";
 const RESTORE: &[u8] = b"\x1b8";
 const SYNC_BEGIN: &[u8] = b"\x1b[?2026h";
 const SYNC_END: &[u8] = b"\x1b[?2026l";
 const CURSOR_QUERY: &[u8] = b"\x1b[6n";
+
+/// Messages to the thread that keeps the screen model current while nobody types.
+enum Parse {
+    Bytes(Vec<u8>),
+    Resize(u16, u16),
+    Give(Box<vt100::Parser>),
+    Take(mpsc::Sender<Box<vt100::Parser>>),
+}
+
+struct Background {
+    to_parser: mpsc::Sender<Parse>,
+    backlog: Arc<AtomicUsize>,
+}
+
+fn parse_in_background(messages: mpsc::Receiver<Parse>, backlog: Arc<AtomicUsize>) {
+    let mut parser: Option<Box<vt100::Parser>> = None;
+    while let Ok(message) = messages.recv() {
+        match message {
+            Parse::Bytes(bytes) => {
+                if let Some(parser) = parser.as_mut() {
+                    parser.process(&bytes);
+                }
+                backlog.fetch_sub(bytes.len(), Ordering::Release);
+            }
+            Parse::Resize(rows, cols) => {
+                if let Some(parser) = parser.as_mut() {
+                    parser.screen_mut().set_size(rows, cols);
+                }
+            }
+            Parse::Give(given) => parser = Some(given),
+            Parse::Take(reply) => {
+                if let Some(taken) = parser.take() {
+                    let _ = reply.send(taken);
+                }
+            }
+        }
+    }
+}
 
 #[derive(Default)]
 pub struct Io {
@@ -82,6 +132,20 @@ pub struct Session {
     /// if no output was forwarded after its query.
     outputs: u64,
     terminal_answers: bool,
+    /// The foreground program echoes slowly enough to be worth predicting. Otherwise
+    /// foretype only measures, and is a plain pipe.
+    boosting: bool,
+    /// Foreground process group; a new one is a different program, measured afresh.
+    foreground: i32,
+    /// Smoothed echo latency of the foreground program, in milliseconds.
+    echo_ms: Option<f64>,
+    samples_seen: usize,
+    /// Input bytes already forwarded ahead of their tokens.
+    input_sent: usize,
+    background: Option<Background>,
+    /// The shadow model lives on the background thread right now.
+    offloaded: bool,
+    size: (u16, u16),
 }
 
 impl Session {
@@ -106,13 +170,160 @@ impl Session {
             cursor_checks_failed: 0,
             outputs: 0,
             terminal_answers: false,
+            boosting: false,
+            foreground: 0,
+            echo_ms: None,
+            samples_seen: 0,
+            input_sent: 0,
+            background: None,
+            offloaded: false,
+            size: (rows.max(1), cols.max(1)),
         }
+    }
+
+    /// Lets heavy output stream at full speed: while nothing is typed or boosted, the
+    /// screen model is parsed on another thread.
+    pub fn parse_in_background(&mut self) {
+        let (to_parser, messages) = mpsc::channel();
+        let backlog = Arc::new(AtomicUsize::new(0));
+        let shared = backlog.clone();
+        let spawned = std::thread::Builder::new()
+            .name("foretype-model".into())
+            .spawn(move || parse_in_background(messages, shared));
+        if spawned.is_ok() {
+            self.background = Some(Background { to_parser, backlog });
+        }
+    }
+
+    /// Hands the model to the background thread when nothing needs it here.
+    fn maybe_offload(&mut self) {
+        let Some(background) = &self.background else {
+            return;
+        };
+        let quiet = !self.offloaded
+            && !self.boosting
+            && !self.dirty
+            && !self.saved
+            && self.held.is_empty()
+            && !self.input.has_carry()
+            && !self.predictor.has_pending()
+            && !self
+                .queries
+                .iter()
+                .any(|query| !matches!(query, Query::App));
+        if !quiet {
+            return;
+        }
+        let parser = std::mem::replace(&mut self.shadow, vt100::Parser::new(1, 1, 0));
+        if background
+            .to_parser
+            .send(Parse::Give(Box::new(parser)))
+            .is_ok()
+        {
+            self.offloaded = true;
+        } else {
+            self.lose_model();
+        }
+    }
+
+    /// Takes the model back once the background thread has parsed everything sent so
+    /// far. Returns false if that would make a keystroke wait.
+    fn catch_up(&mut self) -> bool {
+        if !self.offloaded {
+            return true;
+        }
+        let Some(background) = &self.background else {
+            return true;
+        };
+        if background.backlog.load(Ordering::Acquire) > CATCH_UP_LIMIT {
+            return false;
+        }
+        let (reply, taken) = mpsc::channel();
+        let parser = background
+            .to_parser
+            .send(Parse::Take(reply))
+            .ok()
+            .and_then(|()| taken.recv().ok());
+        self.offloaded = false;
+        match parser {
+            Some(parser) => self.shadow = *parser,
+            None => self.lose_model(),
+        }
+        true
+    }
+
+    /// The background thread is gone; start over with an empty model. Cursor checks
+    /// keep anything from being drawn until it agrees with the terminal again.
+    fn lose_model(&mut self) {
+        crate::log!("background model lost");
+        self.background = None;
+        self.offloaded = false;
+        self.shadow = vt100::Parser::new(self.size.0, self.size.1, 0);
+        self.epoch += 1;
+        self.predictor.clear();
+    }
+
+    /// A different job came to the foreground of the terminal: measure it from scratch.
+    pub fn set_foreground(&mut self, group: i32, now: Instant, io: &mut Io) {
+        if group == self.foreground {
+            return;
+        }
+        self.foreground = group;
+        self.echo_ms = None;
+        self.samples_seen = self.predictor.stats.echo_ms.len();
+        self.predictor.clear();
+        if self.boosting {
+            let mut out = Vec::new();
+            self.stop_boosting(now, &mut out);
+            self.emit(out, io);
+        }
+    }
+
+    /// Learns the foreground program's echo latency from confirmed keystrokes and turns
+    /// drawing on or off.
+    fn gate(&mut self, now: Instant, out: &mut Vec<u8>) {
+        let samples = &self.predictor.stats.echo_ms;
+        if samples.len() == self.samples_seen {
+            return;
+        }
+        for &sample in &samples[self.samples_seen..] {
+            self.echo_ms = Some(match self.echo_ms {
+                Some(smoothed) => smoothed * 0.7 + sample * 0.3,
+                None => sample,
+            });
+        }
+        self.samples_seen = samples.len();
+        let echo = self.echo_ms.unwrap_or(0.0);
+        if !self.boosting && echo > BOOST_ABOVE_MS {
+            crate::log!("echo {echo:.0} ms: boosting");
+            self.boosting = true;
+        } else if self.boosting && echo < BOOST_BELOW_MS {
+            crate::log!("echo {echo:.0} ms: not boosting");
+            self.stop_boosting(now, out);
+        }
+    }
+
+    fn stop_boosting(&mut self, now: Instant, out: &mut Vec<u8>) {
+        self.boosting = false;
+        self.predictor.clear();
+        self.reconcile(now, out);
+    }
+
+    #[cfg(test)]
+    pub fn take_model_back(&mut self) {
+        assert!(self.catch_up());
+    }
+
+    #[cfg(test)]
+    pub fn boost(&mut self) {
+        self.boosting = true;
+        self.echo_ms = Some(100.0);
     }
 
     /// Asks the terminal where the cursor is. foretype usually starts below existing
     /// output, and the remote side draws relative to wherever that is.
     pub fn sync_cursor(&mut self, now: Instant, io: &mut Io) {
-        if !self.enabled || !self.can_inject() || self.saved {
+        if !self.enabled || !self.boosting || !self.can_inject() || self.saved {
             return;
         }
         io.terminal.extend_from_slice(CURSOR_QUERY);
@@ -188,10 +399,43 @@ impl Session {
     // ---- remote output -------------------------------------------------------------
 
     pub fn output(&mut self, bytes: &[u8], now: Instant, io: &mut Io) {
+        if self.offloaded {
+            self.output_offloaded(bytes, io);
+            return;
+        }
+        self.output_here(bytes, now, io);
+        self.maybe_offload();
+    }
+
+    /// Nothing is typed or boosted: forward at once, and let the background thread
+    /// keep the model current.
+    fn output_offloaded(&mut self, bytes: &[u8], io: &mut Io) {
+        self.scanner.feed(bytes);
+        let model = self.scanner.take_model_all();
+        self.terminal_ground = self.scanner.at_ground();
+        self.outputs += 1;
+        for _ in 0..self.scanner.take_cpr_queries() {
+            self.queries.push_back(Query::App);
+        }
+        if self.scanner.take_reset() {
+            self.epoch += 1;
+        }
+        io.terminal.extend_from_slice(bytes);
+        if let Some(background) = &self.background {
+            background.backlog.fetch_add(model.len(), Ordering::Release);
+            if background.to_parser.send(Parse::Bytes(model)).is_err() {
+                self.lose_model();
+            }
+        }
+    }
+
+    fn output_here(&mut self, bytes: &[u8], now: Instant, io: &mut Io) {
         let sync_before = self.scanner.sync();
-        if !self.terminal_ground {
-            // A partial sequence was already flushed: the terminal is mid-sequence, so
-            // there is nothing to gain from holding back.
+        let idle = !self.boosting && !self.dirty && self.held.is_empty();
+        if !self.terminal_ground || idle {
+            // Not boosting, or a partial sequence was already flushed and the terminal is
+            // mid-sequence: there is nothing to gain from holding back. The models still
+            // follow along, so they are current when ssh comes to the foreground.
             self.scanner.feed(bytes);
             let model = self.scanner.take_model_all();
             self.terminal_ground = self.scanner.at_ground();
@@ -283,6 +527,7 @@ impl Session {
             };
             self.predictor.observe(surface, now);
         }
+        self.gate(now, out);
         self.reconcile(now, out);
         self.request_cursor_check(now, out);
     }
@@ -290,9 +535,36 @@ impl Session {
     // ---- local input ---------------------------------------------------------------
 
     pub fn input(&mut self, bytes: &[u8], now: Instant, io: &mut Io) {
+        if !self.catch_up() {
+            // Output is pouring in and the model is behind: this keystroke goes out
+            // unmeasured rather than waiting.
+            io.child.extend_from_slice(bytes);
+            let _ = self.input.feed(bytes);
+            let _ = self.input.flush();
+            self.predictor.clear();
+            return;
+        }
+        // Input is only held back while the terminal may be answering one of our own
+        // cursor queries, so that the answer can be taken out. Otherwise it goes out
+        // as it arrives, and tokens are only used to classify it.
+        let ours = self
+            .queries
+            .iter()
+            .any(|query| !matches!(query, Query::App));
+        if !ours {
+            io.child.extend_from_slice(bytes);
+            self.input_sent += bytes.len();
+        }
         let tokens = self.input.feed(bytes);
         self.tokens(tokens, now, io);
         self.input_since = self.input.has_carry().then_some(now);
+        self.maybe_offload();
+    }
+
+    fn send_input(&mut self, bytes: &[u8], io: &mut Io) {
+        let sent = self.input_sent.min(bytes.len());
+        self.input_sent -= sent;
+        io.child.extend_from_slice(&bytes[sent..]);
     }
 
     fn tokens(&mut self, tokens: Vec<Token>, now: Instant, io: &mut Io) {
@@ -319,6 +591,7 @@ impl Session {
                             }
                         }
                         self.predictor.verification_result(line, ok);
+                        self.input_sent -= self.input_sent.min(token.bytes.len());
                         continue;
                     }
                     Some(Query::Sync { outputs, .. }) => {
@@ -326,13 +599,14 @@ impl Session {
                         if outputs == self.outputs {
                             self.set_model_cursor(actual);
                         }
+                        self.input_sent -= self.input_sent.min(token.bytes.len());
                         continue;
                     }
                     // The application asked; the answer is its own.
                     Some(Query::App) | None => {}
                 }
             }
-            io.child.extend_from_slice(&token.bytes);
+            self.send_input(&token.bytes, io);
             let event = match token.key {
                 Key::Text(text) if self.prediction_allowed() && !self.scanner.sync() => {
                     Event::Text(text)
@@ -347,6 +621,7 @@ impl Session {
             self.predictor.record_input(surface, &event, now);
         }
         let mut out = Vec::new();
+        self.gate(now, &mut out);
         self.reconcile(now, &mut out);
         self.request_cursor_check(now, &mut out);
         self.emit(out, io);
@@ -355,6 +630,13 @@ impl Session {
     // ---- timers and resize ---------------------------------------------------------
 
     pub fn tick(&mut self, now: Instant, io: &mut Io) {
+        if self.offloaded && self.input_since.is_none() {
+            // Nothing pending can need the model while it is offloaded.
+            return;
+        }
+        if !self.catch_up() {
+            return;
+        }
         if self
             .held_since
             .is_some_and(|since| now >= since + HOLD_TIMEOUT)
@@ -409,11 +691,21 @@ impl Session {
             self.repair_without_save(&mut out);
         }
         self.emit(out, io);
+        self.maybe_offload();
     }
 
     pub fn resize(&mut self, rows: u16, cols: u16, now: Instant, io: &mut Io) {
         let (rows, cols) = (rows.max(1), cols.max(1));
-        if self.shadow.screen().size() == (rows, cols) {
+        if self.size == (rows, cols) {
+            return;
+        }
+        self.size = (rows, cols);
+        if self.offloaded {
+            self.epoch += 1;
+            self.display.screen_mut().set_size(rows, cols);
+            if let Some(background) = &self.background {
+                let _ = background.to_parser.send(Parse::Resize(rows, cols));
+            }
             return;
         }
         // The terminal reflows on its own; coordinates from before are not comparable.
@@ -460,6 +752,10 @@ impl Session {
     // ---- drawing -------------------------------------------------------------------
 
     fn request_cursor_check(&mut self, now: Instant, out: &mut Vec<u8>) {
+        // Nothing is ever written into a program that is only being measured.
+        if !self.boosting {
+            return;
+        }
         let Some((line, anchor)) = self.predictor.verification_request() else {
             return;
         };
@@ -478,7 +774,10 @@ impl Session {
 
     /// Make the real terminal show the authoritative screen plus the overlay.
     fn reconcile(&mut self, now: Instant, out: &mut Vec<u8>) {
-        let overlay = if self.prediction_allowed() {
+        if self.offloaded {
+            return;
+        }
+        let overlay = if self.boosting && self.prediction_allowed() {
             self.predictor.overlay(self.surface())
         } else {
             None

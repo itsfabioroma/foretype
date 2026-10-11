@@ -125,10 +125,28 @@ impl Scanner {
     /// is at ground state. Zero means no safe split point was found.
     pub fn feed(&mut self, bytes: &[u8]) -> usize {
         let mut safe = 0;
-        for (index, &byte) in bytes.iter().enumerate() {
-            self.byte(byte);
+        let mut index = 0;
+        while index < bytes.len() {
             if self.at_ground() {
-                safe = index + 1;
+                // Plain text is most of any output; copy runs of it in one go.
+                let run = bytes[index..]
+                    .iter()
+                    .take_while(|byte| (0x20..=0x7e).contains(*byte))
+                    .count();
+                if run > 0 {
+                    self.model.extend_from_slice(&bytes[index..index + run]);
+                    self.last_graphic.clear();
+                    self.last_graphic.push(bytes[index + run - 1]);
+                    index += run;
+                    safe = index;
+                    self.model_safe = self.model.len();
+                    continue;
+                }
+            }
+            self.byte(bytes[index]);
+            index += 1;
+            if self.at_ground() {
+                safe = index;
                 self.model_safe = self.model.len();
             }
         }

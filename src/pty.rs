@@ -37,17 +37,23 @@ pub struct Pty {
     pub child: Child,
 }
 
+/// Starts `program` (as `arg0`) as the session leader of a new pty.
 pub fn spawn(
     program: &std::path::Path,
+    arg0: &str,
     args: &[String],
     size: Option<Winsize>,
     attrs: Option<&Termios>,
 ) -> io::Result<Pty> {
     let pty = openpty(size.as_ref(), attrs).map_err(io::Error::from)?;
+    let tty = nix::unistd::ttyname(&pty.slave).map_err(io::Error::from)?;
     let mut command = Command::new(program);
     command
+        .arg0(arg0)
         .args(args)
-        .env("FORETYPE_ACTIVE", "1")
+        // Programs that read $SHELL see the real shell, not foretype.
+        .env("SHELL", program)
+        .env(crate::shell::TTY_VAR, tty)
         .stdin(Stdio::from(pty.slave.try_clone()?))
         .stdout(Stdio::from(pty.slave.try_clone()?))
         .stderr(Stdio::from(pty.slave));

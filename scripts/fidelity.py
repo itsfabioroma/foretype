@@ -48,10 +48,14 @@ def burst(text, gap=0.015):
         time.sleep(gap)
 
 
-def scenario(command):
+def scenario(command, host):
     tmux("kill-server", check=False)
     tmux("new-session", "-d", "-s", "t", "-x", "120", "-y", "32", command)
     tmux("set-option", "-g", "status", "off")
+    # A fresh terminal tab: local shell first, then ssh.
+    time.sleep(2)
+    keys(f"ssh {host}")
+    keys("Enter", literal=False)
     wait_for("$")
     keys(" export PS1='FID$ '; cd /tmp; clear")
     keys("Enter", literal=False)
@@ -118,8 +122,12 @@ def main():
     parser.add_argument("--foretype", default=os.path.join(os.path.dirname(__file__), "..", "target", "release", "foretype"))
     args = parser.parse_args()
     host = shlex.quote(args.host)
-    plain = scenario(f"FORETYPE=off ssh -tt {host}")
-    predicted = scenario(f"{shlex.quote(os.path.abspath(args.foretype))} ssh {host}")
+    shell = os.environ.get("SHELL", "/bin/zsh")
+    if os.path.basename(shell).startswith("foretype"):
+        shell = "/bin/zsh"
+    foretype = shlex.quote(os.path.abspath(args.foretype))
+    plain = scenario(f"{shell} -il", host)
+    predicted = scenario(f"env FORETYPE_SHELL={shell} {foretype} shell -l", host)
     if plain == predicted:
         print("ok: final screens are identical, attributes included")
         return 0

@@ -2,9 +2,10 @@
 """Measure keystroke-to-screen latency over a real ssh session, with and without foretype.
 
 Drives a private tmux server (its own socket; your tmux is untouched) as the local
-terminal, types into the remote side one key at a time and records how long each
-character takes to appear on screen. Nothing is submitted: the draft is cleared at the
-end and the session exits.
+terminal. Each run opens a shell the way a terminal tab does (plain, or inside
+`foretype shell`), types `ssh host`, then types into the remote side one key at a time
+and records how long each character takes to appear on screen. Nothing is submitted:
+the draft is cleared at the end and the session exits.
 
     python3 scripts/latency.py --host myhost
     python3 scripts/latency.py --host myhost --remote 'cd /tmp && pi' --ready 'pi'
@@ -58,15 +59,18 @@ def session(command, args):
     tmux("new-session", "-d", "-s", "t", "-x", str(WIDTH), "-y", str(HEIGHT), *env_args, command)
     tmux("set-option", "-g", "status", "off")
     marker = f"R{uuid.uuid4().hex[:6]}"
-    if args.via_shell:
-        # A fresh interactive login shell: exactly what a user types, hook included.
-        time.sleep(2)
-        tmux("send-keys", "-t", "t", "-l", command_line(args, args.via_shell_mode))
-        tmux("send-keys", "-t", "t", "Enter")
-        time.sleep(1)
-    elapsed, text = wait_for(lambda s: "$" in s or "#" in s or "%" in s, 20, poll=0.1)
+    # A fresh terminal tab: the local shell starts, then the user types `ssh host`.
+    time.sleep(2)
+    connect = args.connect or f"ssh {shlex.quote(args.host)}"
+    tmux("send-keys", "-t", "t", "-l", connect)
+    tmux("send-keys", "-t", "t", "Enter")
+    elapsed, text = wait_for(lambda s: "$" in s, 20, poll=0.1)
     if elapsed is None:
-        raise SystemExit(f"no shell prompt from {command!r}:\n{text}")
+        raise SystemExit(f"no remote prompt from {command!r}:\n{text}")
+    if args.connect:
+        # Not a shell: nothing to configure, the prompt is already there.
+        time.sleep(0.5)
+        return marker
     tmux("send-keys", "-t", "t", "-l", f" export PS1='{marker}$ '; clear")
     tmux("send-keys", "-t", "t", "Enter")
     elapsed, _ = wait_for(lambda s: f"{marker}$" in s, 10, poll=0.05)
@@ -80,11 +84,6 @@ def session(command, args):
             raise SystemExit(f"{args.remote!r} never showed {args.ready!r}:\n{text}")
         time.sleep(args.settle)
     return marker
-
-
-def command_line(args, mode):
-    host = shlex.quote(args.host)
-    return f"FORETYPE=off ssh {host}" if mode == "off" else f"ssh {host}"
 
 
 def measure(label, command, args):
@@ -129,7 +128,11 @@ def measure(label, command, args):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    parser.add_argument("--host", required=True)
+    parser.add_argument("--host", help="ssh destination to type into")
+    parser.add_argument(
+        "--connect",
+        help="command to run instead of ssh, e.g. 'python3 scripts/laggy.py 150'",
+    )
     parser.add_argument("--foretype", default=os.path.join(os.path.dirname(__file__), "..", "target", "release", "foretype"))
     parser.add_argument("--remote", help="command to start on the remote host before typing")
     parser.add_argument("--ready", default="", help="text that shows the remote command is ready")
@@ -137,24 +140,18 @@ def main():
     parser.add_argument("--text", default="the quick brown fox jumps over")
     parser.add_argument("--gap", type=float, default=90, help="ms between keystrokes")
     parser.add_argument("--verbose", action="store_true", help="print every latency")
-    parser.add_argument(
-        "--via-shell",
-        action="store_true",
-        help="type `ssh host` into a fresh interactive $SHELL, using the installed hook",
-    )
     args = parser.parse_args()
+    if not args.host and not args.connect:
+        parser.error("give --host or --connect")
 
-    foretype = os.path.abspath(args.foretype)
-    if args.via_shell:
-        shell = os.environ.get("SHELL", "/bin/zsh")
-        args.via_shell_mode = "off"
-        base, _, _, _ = measure("ssh", f"{shell} -il", args)
-        args.via_shell_mode = "on"
-        fast, _, leftovers, plain = measure("foretype", f"{shell} -il", args)
-    else:
-        ssh = f"FORETYPE=off ssh -tt {shlex.quote(args.host)}"
-        base, _, _, _ = measure("ssh", ssh, args)
-        fast, _, leftovers, plain = measure("foretype", f"{shlex.quote(foretype)} ssh {shlex.quote(args.host)}", args)
+    shell = os.environ.get("SHELL", "/bin/zsh")
+    if os.path.basename(shell).startswith("foretype"):
+        shell = "/bin/zsh"
+    foretype = shlex.quote(os.path.abspath(args.foretype))
+    base, _, _, _ = measure("plain", f"{shell} -il", args)
+    fast, _, leftovers, plain = measure(
+        "foretype", f"env FORETYPE_SHELL={shell} {foretype} shell -l", args
+    )
     print(f"speedup: {base / fast:.1f}x")
     if leftovers:
         print("FAIL: underlined prediction left on screen:\n" + plain)

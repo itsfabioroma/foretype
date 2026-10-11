@@ -2,10 +2,10 @@
 name = "foretype"
 version = "0.1.0"
 edition = "2024"
-description = "Optimistic typing for interactive ssh: see what you type before the server echoes it"
+description = "Make remote machines feel local: optimistic local echo for ssh and anything else that echoes slowly"
 license = "Apache-2.0"
 repository = "https://github.com/itsfabioroma/foretype"
-keywords = ["ssh", "terminal", "latency", "local-echo", "mosh"]
+keywords = ["ssh", "terminal", "latency", "local-echo", "remote"]
 categories = ["command-line-utilities"]
 readme = "README.md"
 
@@ -16,6 +16,6 @@ strip = true
 
 [dependencies]
 libc = "0.2.190"
-nix = { version = "0.31.3", features = ["term", "process", "signal", "poll", "fs", "ioctl"] }
+nix = { version = "0.31.3", features = ["term", "process", "signal", "poll", "fs", "ioctl", "user"] }
 signal-hook = "0.4.5"
 vt100 = "0.16.2"

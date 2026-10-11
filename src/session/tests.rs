@@ -89,8 +89,24 @@ struct Rig {
 
 impl Rig {
     fn new() -> Self {
+        let mut session = Session::new(ROWS, COLS, true, crate::predict::DEFAULT_LIFETIME);
+        session.boost();
+        Self::with(session)
+    }
+
+    /// A session that has to measure echo latency before it draws anything.
+    fn measuring() -> Self {
+        Self::with(Session::new(
+            ROWS,
+            COLS,
+            true,
+            crate::predict::DEFAULT_LIFETIME,
+        ))
+    }
+
+    fn with(session: Session) -> Self {
         Self {
-            session: Session::new(ROWS, COLS, true, crate::predict::DEFAULT_LIFETIME),
+            session,
             terminal: Terminal::new(),
             sent: Vec::new(),
             now: Instant::now(),
@@ -127,7 +143,8 @@ impl Rig {
     }
 
     /// The local terminal shows exactly the authoritative screen.
-    fn assert_authoritative(&self) {
+    fn assert_authoritative(&mut self) {
+        self.session.take_model_back();
         let shadow = self.session.shadow.screen();
         let terminal = self.terminal.parser.screen();
         for row in 0..ROWS {
@@ -372,6 +389,7 @@ fn a_disagreeing_cursor_check_draws_nothing_and_resyncs_the_model() {
 #[test]
 fn a_silent_terminal_turns_foretype_into_a_pipe() {
     let mut session = Session::new(ROWS, COLS, true, crate::predict::DEFAULT_LIFETIME);
+    session.boost();
     let now = Instant::now();
     let mut io = Io::default();
     session.sync_cursor(now, &mut io);
@@ -500,8 +518,11 @@ fn randomized_sessions_always_converge_to_the_remote_screen() {
         b"\x08",
         "\u{fe0f}\u{1f600}".as_bytes(),
     ];
-    for _ in 0..300 {
+    for iteration in 0..300 {
         let mut rig = Rig::new();
+        if iteration % 2 == 0 {
+            rig.session.parse_in_background();
+        }
         rig.remote(b"$ ");
         let mut unechoed: VecDeque<u8> = VecDeque::new();
         for _ in 0..60 {
@@ -548,5 +569,169 @@ fn randomized_sessions_always_converge_to_the_remote_screen() {
         rig.advance(Duration::from_millis(100));
         rig.advance(Duration::from_secs(2));
         rig.assert_authoritative();
+    }
+}
+
+#[test]
+fn fast_local_programs_are_only_measured_never_touched() {
+    let mut session = Session::new(ROWS, COLS, true, crate::predict::DEFAULT_LIFETIME);
+    let now = Instant::now();
+    let mut io = Io::default();
+    session.set_foreground(42, now, &mut io);
+    // A local shell echoes immediately. Partial sequences and lone escapes go through
+    // untouched, and nothing of foretype's own is ever written.
+    session.output(b"$ ", now, &mut io);
+    for (index, key) in b"vim notes".iter().enumerate() {
+        let at = now + Duration::from_millis(index as u64 * 50);
+        session.input(&[*key], at, &mut io);
+        session.output(&[*key], at + Duration::from_millis(1), &mut io);
+    }
+    for chunk in [&b"\x1b[3"[..], b"1mx\x1b", b"[0m", "\u{e9}".as_bytes()] {
+        session.output(chunk, now + Duration::from_secs(1), &mut io);
+    }
+    session.input(b"\x1b", now + Duration::from_secs(1), &mut io);
+    assert_eq!(io.terminal, "$ vim notes\x1b[31mx\x1b[0m\u{e9}".as_bytes());
+    assert_eq!(io.child, b"vim notes\x1b");
+}
+
+#[test]
+fn a_laggy_program_is_boosted_after_its_first_echo() {
+    let mut rig = Rig::measuring();
+    let mut io = Io::default();
+    rig.session.set_foreground(7, rig.now, &mut io);
+    rig.deliver(io);
+    rig.remote(b"local% ssh host\r\n$ ");
+    rig.type_keys(b"a");
+    rig.advance(Duration::from_millis(150));
+    rig.remote(b"a");
+    // 150 ms echo: from now on typing shows immediately.
+    rig.type_keys(b"bc");
+    assert_eq!(rig.terminal.row(1), "$ abc");
+    assert!(rig.terminal.underlined(1, 3));
+    rig.remote(b"bc");
+    rig.assert_authoritative();
+    // The job ends and the shell is back in the foreground: measured from scratch.
+    let mut io = Io::default();
+    rig.session.set_foreground(1, rig.now, &mut io);
+    rig.deliver(io);
+    rig.remote(b"\r\nlocal% ");
+    rig.type_keys(b"l");
+    rig.advance(Duration::from_millis(1));
+    rig.remote(b"l");
+    rig.type_keys(b"s");
+    assert_eq!(rig.terminal.row(2), "local% l");
+}
+
+#[test]
+fn boosting_stops_when_the_echo_becomes_fast() {
+    let mut rig = Rig::new();
+    rig.remote(b"$ ");
+    for (index, key) in b"abcdefghij".iter().enumerate() {
+        rig.type_keys(&[*key]);
+        rig.advance(Duration::from_millis(1));
+        rig.remote(&[*key]);
+        if index == 9 {
+            assert!(!rig.session.boosting);
+        }
+    }
+    rig.assert_authoritative();
+}
+
+#[test]
+fn keystrokes_are_never_delayed_when_no_query_is_outstanding() {
+    let mut rig = Rig::new();
+    rig.trained_shell();
+    let mut io = Io::default();
+    rig.session.input(b"\x1b", rig.now, &mut io);
+    assert_eq!(io.child, b"\x1b");
+    let mut io = Io::default();
+    rig.session.input(b"[A", rig.now, &mut io);
+    assert_eq!(io.child, b"[A");
+    // The escape sequence still counts as a control key for prediction.
+    rig.type_keys(b"b");
+    rig.assert_authoritative();
+}
+
+#[test]
+fn the_background_model_matches_parsing_inline() {
+    let now = Instant::now();
+    let mut inline = Session::new(ROWS, COLS, true, crate::predict::DEFAULT_LIFETIME);
+    let mut background = Session::new(ROWS, COLS, true, crate::predict::DEFAULT_LIFETIME);
+    background.parse_in_background();
+    let chunks: [&[u8]; 6] = [
+        b"$ ls\r\nfile\r\n",
+        b"\x1b[31mred\x1b[m \x1b[s\x1b[1;30Hcorner\x1b[u",
+        b"\x1b[3",
+        b"bx\x1b]0;title\x07",
+        "wide \u{4e2d} done\r\n$ ".as_bytes(),
+        b"\x1b[?1049h\x1b[2Jalt\x1b[?1049l",
+    ];
+    for chunk in chunks {
+        let (mut a, mut b) = (Io::default(), Io::default());
+        inline.output(chunk, now, &mut a);
+        background.output(chunk, now, &mut b);
+        assert_eq!(a.terminal, b.terminal);
+    }
+    assert!(background.offloaded);
+    // A keystroke brings the model back, identical to the inline one.
+    let (mut a, mut b) = (Io::default(), Io::default());
+    inline.input(b"x", now, &mut a);
+    background.input(b"x", now, &mut b);
+    assert!(!background.offloaded);
+    assert_eq!(a.child, b.child);
+    assert_eq!(
+        inline.shadow.screen().contents_formatted(),
+        background.shadow.screen().contents_formatted()
+    );
+    assert_eq!(
+        inline.shadow.screen().cursor_position(),
+        background.shadow.screen().cursor_position()
+    );
+}
+
+/// `cargo test --release -- --ignored --nocapture throughput`
+#[test]
+#[ignore]
+fn throughput() {
+    let mut text = Vec::new();
+    for index in 0..700_000 {
+        text.extend_from_slice(
+            format!("line {index} lorem ipsum dolor sit amet lorem ipsum dolor sit amet\r\n")
+                .as_bytes(),
+        );
+    }
+    let chunks: Vec<&[u8]> = text.chunks(16 * 1024).collect();
+    let mb = text.len() as f64 / 1e6;
+
+    let start = Instant::now();
+    let mut scanner = crate::scan::Scanner::default();
+    for chunk in &chunks {
+        scanner.feed(chunk);
+        std::hint::black_box(scanner.take_model());
+    }
+    let scan = start.elapsed();
+
+    let start = Instant::now();
+    let mut parser = vt100::Parser::new(45, 160, 0);
+    for chunk in &chunks {
+        parser.process(chunk);
+    }
+    let model = start.elapsed();
+
+    let start = Instant::now();
+    let mut session = Session::new(45, 160, true, crate::predict::DEFAULT_LIFETIME);
+    let now = Instant::now();
+    for chunk in &chunks {
+        let mut io = Io::default();
+        session.output(chunk, now, &mut io);
+        std::hint::black_box(io);
+    }
+    let total = start.elapsed();
+    for (name, time) in [("scanner", scan), ("vt100", model), ("session", total)] {
+        println!(
+            "{name:>8}: {:6.0} MB/s ({:?})",
+            mb / time.as_secs_f64(),
+            time
+        );
     }
 }

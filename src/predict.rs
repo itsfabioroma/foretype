@@ -303,7 +303,6 @@ impl Predictor {
         }
     }
 
-    #[cfg(test)]
     pub fn has_pending(&self) -> bool {
         self.line
             .as_ref()
