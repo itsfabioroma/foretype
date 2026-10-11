@@ -1,29 +1,48 @@
 #!/bin/sh
-# Records the same prompt typed into a coding agent on a far server, over plain ssh and
-# through foretype, then stacks both into demo/foretype.gif.
+# Records demo/foretype.gif: one terminal split in two, plain ssh on top and foretype
+# below, with tmux sending every keystroke to both panes at the same instant.
 #
-#   FORETYPE_DEMO_SSH='-J jump1,jump2 myserver' \
-#   FORETYPE_DEMO_AGENT='cd /tmp/demo && exec pi -ne -ns -np -nc --no-session --offline' \
-#   demo/render.sh
+# The tape runs `ssh devbox`. Point FORETYPE_DEMO_SSH_CONFIG at an ssh config that
+# defines it, for example:
 #
-# Needs vhs (brew install vhs), ffmpeg, gifsicle and foretype on PATH. The labels in the
-# tapes state the round trip; measure yours with scripts/latency.py and edit them.
+#   Include ~/.ssh/config
+#   Host devbox
+#       HostName your.server
+#       RequestTTY force
+#       RemoteCommand PS1='$ ' exec bash --norc --noprofile -i
+#       ControlMaster auto
+#       ControlPath /tmp/foretype-demo-%C
+#       ControlPersist 180
+#
+# Needs vhs (brew install vhs), tmux, gifsicle and foretype on PATH.
 set -eu
 cd "$(dirname "$0")/.."
-: "${FORETYPE_DEMO_SSH:?set the ssh destination (and any -J jump hosts)}"
-: "${FORETYPE_DEMO_AGENT:?set the remote command that starts the agent}"
-export FORETYPE_DEMO_SSH FORETYPE_DEMO_AGENT
-vhs demo/plain.tape
+: "${FORETYPE_DEMO_SSH_CONFIG:?set the ssh config that defines devbox}"
+tmux() { command tmux -L foretype-demo "$@"; }
+
+# Connect once up front so the recorded `ssh devbox` does not include the handshake.
+ssh -F "$FORETYPE_DEMO_SSH_CONFIG" -o RemoteCommand=none -o RequestTTY=no -fN devbox
+
+tmux kill-server 2>/dev/null || true
+tmux -f /dev/null new-session -d -s demo -x 88 -y 20 zsh
+tmux split-window -v -t demo foretype shell
+tmux set -g status off
+tmux set -g pane-border-status top
+tmux set -g pane-border-format \
+  ' #{?#{==:#{pane_index},0},#[fg=red bold]plain ssh,#[fg=green bold]with foretype}#[default] '
+tmux set -g pane-border-style fg=colour238
+tmux set -g pane-active-border-style fg=colour238
+sleep 2
+for pane in 0 1; do
+  tmux send-keys -t "demo.$pane" \
+    "alias ssh='ssh -F $FORETYPE_DEMO_SSH_CONFIG'; PROMPT='%% '; clear" Enter
+done
+sleep 1
+tmux set -w -t demo synchronize-panes on
+
 vhs demo/foretype.tape
-# Keep each panel's label line and the agent's input box; drop its startup help.
-# Coordinates match the tapes' size settings (960x400, font 18, padding 18).
-panel='split[top][box];[top]crop=iw:95:0:0[t];[box]crop=iw:124:0:238[b];[t][b]vstack'
-ffmpeg -v error -y -i demo/plain.mp4 -i demo/foretype.mp4 -filter_complex "
-  [0:v]${panel},pad=iw:ih+4:0:0:color=0x45475a[slow];
-  [1:v]${panel}[fast];
-  [slow][fast]vstack,fps=25,split[a][b];
-  [a]palettegen=max_colors=64:stats_mode=diff[p];
-  [b][p]paletteuse=dither=none:diff_mode=rectangle" demo/stacked.gif
-gifsicle -O3 --lossy=30 demo/stacked.gif -o demo/foretype.gif
-rm -f demo/stacked.gif
+tmux kill-server
+ssh -F "$FORETYPE_DEMO_SSH_CONFIG" -O exit devbox 2>/dev/null || true
+gifsicle -O3 --lossy=30 --colors 64 demo/recording.gif -o demo/foretype.gif
+rm -f demo/recording.gif
 ls -lh demo/foretype.gif

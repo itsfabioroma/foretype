@@ -4,10 +4,10 @@
 
 foretype is a Rust tool that makes remote typing instant with optimistic echo.
 
-![Typing a prompt into a coding agent on a far server: plain ssh on top, foretype below](demo/foretype.gif)
+![Plain ssh on top, foretype below, same keystrokes at the same time](demo/foretype.gif)
 
-<sub>The same prompt typed into a coding agent on a server ~440 ms away. Top: plain ssh.
-Bottom: with foretype. Nothing is sent to the agent. Rebuild with `demo/render.sh`.</sub>
+<sub>One terminal, two panes, every keystroke sent to both at the same instant. The server is
+~440 ms away. Top: plain ssh. Bottom: with foretype. Rebuild with `demo/render.sh`.</sub>
 
 ```
                        without     with foretype

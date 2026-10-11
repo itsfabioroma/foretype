@@ -1,27 +1,28 @@
-# Typing a prompt into a coding agent (pi) on a server ~440 ms away, through foretype.
-# Render with demo/render.sh, which sets the ssh target and agent command.
-# Nothing is ever submitted to the agent: the prompt is typed, never sent.
-Output demo/foretype.mp4
+# One terminal, two panes, the same keystrokes sent to both at the same instant:
+# plain ssh on top, foretype below. Render with demo/render.sh, which sets up the panes.
+Output demo/recording.gif
 
 Set Shell "zsh"
-Set FontSize 18
-Set Width 960
-Set Height 400
-Set Padding 18
+Set FontSize 20
+Set Width 900
+Set Height 470
+Set Padding 14
 Set Framerate 30
-Set TypingSpeed 45ms
+Set TypingSpeed 55ms
 Set CursorBlink false
 Set Theme "Catppuccin Mocha"
 
 Hide
-Type "foretype shell" Enter
+Type "tmux -L foretype-demo attach -t demo" Enter
 Sleep 1500ms
-Type ` clear; printf '\e[1;32m ssh + foretype\e[0;2m  same server, keys show up as you type\e[0m\n'; ssh -t ${=FORETYPE_DEMO_SSH} "$FORETYPE_DEMO_AGENT"` Enter
-Sleep 14s
-Type "A"
-Sleep 2s
 Show
 
-Sleep 700ms
-Type "dd rate limiting to the login endpoint and write tests for the lockout"
-Sleep 3s
+Sleep 600ms
+Type "ssh devbox"
+Sleep 300ms
+Enter
+Sleep 2s
+Type `echo "remote made local, no more typing lag"`
+Sleep 1500ms
+Enter
+Sleep 2500ms
