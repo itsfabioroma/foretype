@@ -6,7 +6,7 @@
   </picture>
   <br>
   <br>
-  <p><b>Remote made local.</b></p>
+  <p><b>Type on remote machines at local speed.</b></p>
   <p>A Rust tool that forecasts your typing: each key is drawn before the server echoes it back.</p>
   <img alt="macOS and Linux" src="https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-000000?style=for-the-badge&labelColor=000000">
   <img alt="Built with Rust" src="https://img.shields.io/badge/built%20with-Rust-000000?style=for-the-badge&logo=rust&labelColor=000000">
