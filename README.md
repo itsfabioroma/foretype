@@ -1,5 +1,11 @@
 <div align="center">
-  <h1>foretype</h1>
+  <br>
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="assets/logo-dark.svg">
+    <img alt="foretype" src="assets/logo-light.svg" width="420">
+  </picture>
+  <br>
+  <br>
   <p><b>Remote made local.</b></p>
   <p>foretype is a Rust tool that makes remote typing instant with optimistic echo.</p>
   <img alt="macOS and Linux" src="https://img.shields.io/badge/platform-macOS%20%C2%B7%20Linux-000000?style=for-the-badge&labelColor=000000">
