@@ -104,7 +104,9 @@ impl Rig {
         ))
     }
 
-    fn with(session: Session) -> Self {
+    fn with(mut session: Session) -> Self {
+        // Underlined predictions make tentative cells easy to tell apart in tests.
+        session.predictor.underline = true;
         Self {
             session,
             terminal: Terminal::new(),
@@ -570,6 +572,19 @@ fn randomized_sessions_always_converge_to_the_remote_screen() {
         rig.advance(Duration::from_secs(2));
         rig.assert_authoritative();
     }
+}
+
+#[test]
+fn predictions_look_exactly_like_the_echo_by_default() {
+    let mut rig = Rig::new();
+    rig.session.predictor.underline = false;
+    rig.trained_shell();
+    rig.type_keys(b"bc");
+    assert_eq!(rig.terminal.row(0), "$ abc");
+    assert!(!rig.terminal.underlined(0, 3));
+    assert_eq!(rig.terminal.cursor(), (0, 5));
+    rig.remote(b"bc");
+    rig.assert_authoritative();
 }
 
 #[test]

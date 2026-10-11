@@ -126,6 +126,9 @@ pub struct Predictor {
     line: Option<PredictedLine>,
     next_id: u64,
     lifetime: Duration,
+    /// Underline characters the remote side has not echoed yet. Off by default:
+    /// predictions are drawn exactly as the real echo will look.
+    pub underline: bool,
     pub stats: Stats,
 }
 
@@ -299,6 +302,7 @@ impl Predictor {
             line: None,
             next_id: 1,
             lifetime,
+            underline: false,
             stats: Stats::default(),
         }
     }
@@ -531,7 +535,7 @@ impl Predictor {
                 let mut style = software_cursor
                     .as_ref()
                     .map_or(base.style, |cursor| cursor.padding.style);
-                style.underline = true;
+                style.underline |= self.underline;
                 CellData {
                     symbol: char::from(pending.byte).to_string(),
                     wide: false,
@@ -589,6 +593,12 @@ mod tests {
         verify(prediction) || repaint
     }
 
+    fn underlined() -> Predictor {
+        let mut prediction = Predictor::new(DEFAULT_LIFETIME);
+        prediction.underline = true;
+        prediction
+    }
+
     /// Answers every cursor check as the real terminal would in these tests.
     fn verify(prediction: &mut Predictor) -> bool {
         match prediction.verification_request() {
@@ -625,7 +635,7 @@ mod tests {
     }
 
     fn trained(now: Instant) -> (Predictor, vt100::Parser) {
-        let mut prediction = Predictor::new(DEFAULT_LIFETIME);
+        let mut prediction = underlined();
         record(&mut prediction, &screen("$ "), "a", now);
         let echoed = screen("$ a");
         prediction.observe(surface(&echoed), now + Duration::from_millis(100));
@@ -635,7 +645,7 @@ mod tests {
     #[test]
     fn prediction_waits_for_echo_then_displays_pending_suffix_without_mutating_authority() {
         let now = Instant::now();
-        let mut prediction = Predictor::new(DEFAULT_LIFETIME);
+        let mut prediction = underlined();
         let initial = screen("$ ");
         assert!(!record(&mut prediction, &initial, "abc", now));
         assert!(prediction.overlay(surface(&initial)).is_none());
@@ -678,7 +688,7 @@ mod tests {
     #[test]
     fn prediction_learns_moving_software_cursor_and_moves_it_through_partial_echo() {
         let now = Instant::now();
-        let mut prediction = Predictor::new(DEFAULT_LIFETIME);
+        let mut prediction = underlined();
         let initial = software_cursor_screen("");
         assert!(!record(&mut prediction, &initial, "a", now));
         let echoed = software_cursor_screen("a");

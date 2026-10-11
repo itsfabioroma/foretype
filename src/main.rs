@@ -37,6 +37,7 @@ foretype: remote made local. Instant remote typing with optimistic echo.
 Environment:
     FORETYPE=off              start terminals without foretype
     FORETYPE_TIMEOUT_MS=750   how long an unconfirmed character may stay on screen
+    FORETYPE_UNDERLINE=1      underline characters the remote side has not echoed yet
     FORETYPE_LOG=<file>       write a debug log
 ";
 
@@ -141,6 +142,8 @@ fn proxy(
 
     let mut session = session::Session::new(rows, cols, true, lifetime());
     session.parse_in_background();
+    session.predictor.underline = std::env::var("FORETYPE_UNDERLINE")
+        .is_ok_and(|value| matches!(value.as_str(), "1" | "on" | "true" | "yes"));
     let mut to_child: Vec<u8> = Vec::new();
     let mut stdin_open = true;
     let mut buffer = vec![0u8; 64 * 1024];

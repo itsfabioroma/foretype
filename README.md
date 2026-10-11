@@ -40,9 +40,9 @@ you type takes to come back on screen.
 - **Fast programs are left alone.** Your local shell echoes in about a millisecond, so
   foretype never draws anything there. It only measures.
 - **Slow ones get boosted.** When whatever is in the foreground takes longer than about
-  30 ms to echo, foretype starts showing your keystrokes immediately, underlined, then
-  replaces them with the real echo when it arrives. It doesn't care what the program is
-  called; it only cares that it's slow.
+  30 ms to echo, foretype starts showing your keystrokes immediately, exactly as the
+  echo will look, and quietly checks them against the real echo when it arrives. It
+  doesn't care what the program is called; it only cares that it's slow.
 - **Echo is learned first.** Nothing is predicted on a line until the program has
   visibly echoed a key there, so password prompts stay dark.
 - **Wrong guesses disappear.** If the screen shows something else, or nothing comes back
@@ -76,6 +76,7 @@ again with the next echoed character.
 |---|---|---|
 | `FORETYPE` | on | `off` starts terminals without foretype |
 | `FORETYPE_TIMEOUT_MS` | `750` | how long an unconfirmed character may stay on screen |
+| `FORETYPE_UNDERLINE` | off | `1` underlines characters the remote side has not echoed yet |
 | `FORETYPE_LOG` | | write a debug log to this file |
 
 `foretype shell` runs a boosted shell in the current terminal without installing
