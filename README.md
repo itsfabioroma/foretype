@@ -47,11 +47,21 @@ sudo foretype uninstall     # put your old shell back
 
 ## How it works
 
-foretype times how long each key takes to show up. If it's slow, foretype shows your
-key right away. If it guessed wrong, the key disappears.
+foretype runs your shell inside it and passes every byte through untouched. It keeps
+its own copy of the screen and times how long each key takes to come back.
 
-It only guesses after the program has shown a key on that line, so passwords stay
-hidden. It hides typing lag, not network lag.
+- **Slow programs get boosted.** If the program in front takes over 30 ms to echo,
+  foretype draws your keys right away, in the same style the real echo will have. Fast
+  ones, like your local shell, are left alone.
+- **Wrong guesses vanish.** If the real echo doesn't match, or nothing comes back in
+  750 ms, the guess is erased.
+- **Passwords stay hidden.** foretype only guesses on a line after the program has
+  echoed a key there. Password prompts never echo.
+- **Output is never changed.** Before drawing, foretype asks the terminal where its
+  cursor is and only draws if that matches its copy of the screen. It never writes in
+  the middle of the program's output.
+
+It hides typing lag, not network lag.
 
 ## License
 
