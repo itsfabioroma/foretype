@@ -34,17 +34,24 @@ git clone https://github.com/itsfabioroma/foretype && cd foretype
 ## Usage
 
 Open a new terminal tab. That's it. Typing into anything slow now feels instant: ssh,
-`kubectl exec`, `docker exec`, a coding agent on a far box. Your shell stays the same.
+`kubectl exec`, `docker exec`, a coding agent on a far box. Nothing to install on the
+server.
+
+foretype becomes your login shell and runs your real shell inside it, so your prompt and
+config stay the same.
 
 ```sh
 foretype status             # is this tab boosted?
-sudo foretype uninstall     # undo it
+sudo foretype uninstall     # put your old shell back
 ```
 
 ## How it works
 
 foretype times how long each key takes to show up. If it's slow, foretype shows your
 key right away. If it guessed wrong, the key disappears.
+
+It only guesses after the program has shown a key on that line, so passwords stay
+hidden. It hides typing lag, not network lag.
 
 ## License
 
