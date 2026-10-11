@@ -1,28 +1,27 @@
-# ssh through foretype to the same server. Render with: vhs demo/foretype.tape
+# Typing a prompt into a coding agent (pi) on a server ~440 ms away, through foretype.
+# Render with demo/render.sh, which sets the ssh target and agent command.
+# Nothing is ever submitted to the agent: the prompt is typed, never sent.
 Output demo/foretype.mp4
 
 Set Shell "zsh"
-Set FontSize 22
-Set Width 820
-Set Height 180
-Set Padding 26
+Set FontSize 18
+Set Width 960
+Set Height 400
+Set Padding 18
 Set Framerate 30
-Set TypingSpeed 55ms
+Set TypingSpeed 45ms
 Set CursorBlink false
 Set Theme "Catppuccin Mocha"
 
-# Log in off camera with a neutral prompt.
 Hide
 Type "foretype shell" Enter
-Sleep 1s
-Type "ssh i" Enter
-Sleep 5s
-Type ` export PS1='$ '; clear; printf '\e[2mssh + foretype, same server\e[0m\n'` Enter
+Sleep 1500ms
+Type ` clear; printf '\e[1;32m ssh + foretype\e[0;2m  same server, keys show up as you type\e[0m\n'; ssh -t ${=FORETYPE_DEMO_SSH} "$FORETYPE_DEMO_AGENT"` Enter
+Sleep 14s
+Type "A"
 Sleep 2s
 Show
 
-Sleep 600ms
-Type `echo "remote made local, no more typing lag"`
-Sleep 1200ms
-Enter
-Sleep 2500ms
+Sleep 700ms
+Type "dd rate limiting to the login endpoint and write tests for the lockout"
+Sleep 3s
