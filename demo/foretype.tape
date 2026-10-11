@@ -5,7 +5,7 @@ Output demo/recording.gif
 
 Set Shell "zsh"
 Set FontSize 20
-Set Width 1040
+Set Width 1180
 Set Height 360
 Set Padding 16
 Set Framerate 30
@@ -73,119 +73,123 @@ Type "s"
 Sleep 84ms
 Type " "
 Sleep 115ms
-Type "n"
+Type "m"
 Sleep 40ms
-Type "o"
+Type "y"
 Sleep 53ms
-Type "w"
-Sleep 59ms
 Type " "
 Sleep 167ms
+Type "v"
+Sleep 59ms
+Type "p"
+Sleep 54ms
+Type "s"
+Sleep 46ms
+Type ","
+Sleep 74ms
+Type " "
+Sleep 380ms
+Type "b"
+Sleep 75ms
+Type "u"
+Sleep 64ms
+Type "t"
+Sleep 70ms
+Type " "
+Sleep 134ms
+Type "i"
+Sleep 93ms
+Type "t"
+Sleep 51ms
+Type " "
+Sleep 169ms
+Type "f"
+Sleep 58ms
+Type "e"
+Sleep 98ms
+Type "e"
+Sleep 77ms
+Type "l"
+Sleep 87ms
+Type "s"
+Sleep 71ms
+Type " "
+Sleep 120ms
+Type "l"
+Sleep 74ms
 Type "i"
 Sleep 54ms
-Type "n"
-Sleep 46ms
-Type "s"
-Sleep 74ms
-Type "t"
-Sleep 75ms
-Type "a"
-Sleep 64ms
-Type "n"
-Sleep 70ms
-Type "t"
-Sleep 78ms
-Type "."
-Sleep 87ms
-Type " "
-Sleep 480ms
-Type "r"
-Sleep 96ms
-Type "e"
+Type "k"
 Sleep 76ms
-Type "m"
-Sleep 32ms
-Type "o"
-Sleep 87ms
-Type "t"
-Sleep 40ms
 Type "e"
-Sleep 68ms
+Sleep 144ms
 Type " "
-Sleep 173ms
+Sleep 120ms
 Type "m"
-Sleep 81ms
-Type "a"
-Sleep 72ms
-Type "d"
-Sleep 59ms
-Type "e"
-Sleep 53ms
-Type " "
-Sleep 180ms
-Type "l"
-Sleep 114ms
-Type "o"
 Sleep 70ms
-Type "c"
+Type "y"
 Sleep 66ms
-Type "a"
-Sleep 53ms
+Type " "
+Sleep 139ms
 Type "l"
-Sleep 74ms
+Sleep 53ms
+Type "a"
+Sleep 66ms
+Type "p"
+Sleep 71ms
+Type "t"
+Sleep 62ms
+Type "o"
+Sleep 67ms
+Type "p"
+Sleep 86ms
 Type "."
-Sleep 90ms
+Sleep 83ms
 Type " "
 Sleep 650ms
 Type "b"
-Sleep 105ms
-Type "t"
-Sleep 88ms
-Type "w"
-Sleep 37ms
-Type ","
-Sleep 96ms
-Type " "
-Sleep 159ms
-Type "w"
 Sleep 75ms
-Type "h"
+Type "t"
 Sleep 73ms
+Type "w"
+Sleep 65ms
+Type ","
+Sleep 58ms
+Type " "
+Sleep 116ms
+Type "w"
+Sleep 30ms
+Type "h"
+Sleep 83ms
 Type "o"
 Sleep 65ms
 Type " "
-Sleep 116ms
+Sleep 190ms
 Type "i"
-Sleep 58ms
+Sleep 77ms
 Type "s"
-Sleep 30ms
-Type " "
-Sleep 160ms
-Type "J"
-Sleep 83ms
-Type "o"
-Sleep 47ms
-Type "h"
-Sleep 85ms
-Type "n"
 Sleep 82ms
 Type " "
 Sleep 153ms
-Type "G"
+Type "J"
 Sleep 103ms
-Type "a"
+Type "o"
 Sleep 88ms
-Type "l"
+Type "h"
 Sleep 82ms
-Type "t"
+Type "n"
 Sleep 108ms
+Type " "
+Sleep 125ms
+Type "G"
+Sleep 63ms
+Type "a"
+Sleep 94ms
+Type "l"
+Sleep 97ms
+Type "t"
+Sleep 96ms
 Type "?"
 Sleep 200ms
-Type '\'
-Sleep 63ms
-Type "n"
-Sleep 84ms
 Type '"'
-Sleep 900ms
-Enter
-Sleep 3s
+Sleep 3500ms

@@ -16,7 +16,7 @@
 <br>
 
 <p align="center">
-  <img src="demo/instant-typing.gif" alt="foretype on top, plain ssh below, same keystrokes at the same time">
+  <img src="demo/feels-local.gif" alt="foretype on top, plain ssh below, same keystrokes at the same time">
   <br>
   <sub>Top: foretype. Bottom: plain ssh. Same keys at the same moment, to a server ~440 ms away.</sub>
 </p>

@@ -1,5 +1,5 @@
 #!/bin/sh
-# Records demo/instant-typing.gif: one terminal split in two, foretype on top and plain ssh
+# Records demo/feels-local.gif: one terminal split in two, foretype on top and plain ssh
 # below, with tmux sending every keystroke to both panes at the same instant.
 #
 # The tape runs `ssh devbox`. Point FORETYPE_DEMO_SSH_CONFIG at an ssh config that
@@ -44,6 +44,6 @@ tmux set -w -t demo synchronize-panes on
 vhs demo/foretype.tape
 tmux kill-server
 ssh -F "$FORETYPE_DEMO_SSH_CONFIG" -O exit devbox 2>/dev/null || true
-gifsicle -O3 --lossy=30 --colors 64 demo/recording.gif -o demo/instant-typing.gif
+gifsicle -O3 --lossy=30 --colors 64 demo/recording.gif -o demo/feels-local.gif
 rm -f demo/recording.gif
-ls -lh demo/instant-typing.gif
+ls -lh demo/feels-local.gif
