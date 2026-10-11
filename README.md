@@ -53,21 +53,25 @@ sudo foretype uninstall     # put your old shell back
 
 ## How it works
 
-foretype runs your shell inside it and passes every byte through untouched. It keeps
-its own copy of the screen and times how long each key takes to come back.
+foretype becomes your login shell. It runs your real shell in a pseudo-terminal and
+forwards every byte both ways, unchanged.
 
-- **Slow programs get boosted.** If the program in front takes over 30 ms to echo,
-  foretype draws your keys right away, in the same style the real echo will have. Fast
-  ones, like your local shell, are left alone.
-- **Wrong guesses vanish.** If the real echo doesn't match, or nothing comes back in
-  750 ms, the guess is erased.
-- **Passwords stay hidden.** foretype only guesses on a line after the program has
-  echoed a key there. Password prompts never echo.
-- **Output is never changed.** Before drawing, foretype asks the terminal where its
-  cursor is and only draws if that matches its copy of the screen. It never writes in
-  the middle of the program's output.
+It also feeds the output to a terminal emulator ([vt100](https://crates.io/crates/vt100))
+to keep its own copy of the screen, and times how long each key takes to echo. When the
+program in front is slower than 30 ms, foretype starts drawing your keys itself:
 
-It hides typing lag, not network lag.
+- It only predicts printable keys at the end of a line where the program has already
+  echoed. Password prompts never echo, so they never get predictions.
+- Before drawing on a line, it asks the terminal where the cursor is (`ESC [6n`) and
+  only draws if that matches its copy.
+- It saves the cursor, draws the key in the style the echo will use, and restores the
+  cursor before forwarding any output. The program's bytes land where the program put
+  them.
+- When the echo arrives, it checks it against the guess. If it doesn't match, or nothing
+  comes back within 750 ms, it repaints those cells from its copy of the screen.
+
+Enter, editing keys, paste, clicks and resize stop predicting until the next echo. It
+hides typing lag, not network lag.
 
 ## License
 
