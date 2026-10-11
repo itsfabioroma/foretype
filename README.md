@@ -56,30 +56,26 @@ sudo foretype uninstall     # put your old shell back
 
 ## How it works
 
-foretype runs your real shell in a pseudo-terminal and forwards every byte unchanged.
-It mirrors the screen with [vt100](https://crates.io/crates/vt100) and times how long
-each key takes to echo. When the program in front is slower than 30 ms, foretype draws
-your keys itself, then checks them against the real echo.
+foretype is a single Rust binary. `foretype install` copies it to `/usr/local/bin`, adds
+`foretype-shell` to `/etc/shells`, makes that your login shell with `chsh`, and saves
+your old shell in `~/.config/foretype/shell`. Every new terminal tab, tmux pane and
+editor terminal then starts foretype, which runs your real shell in a pseudo-terminal
+and forwards every byte unchanged. It mirrors the screen with
+[vt100](https://crates.io/crates/vt100) and times how long each key takes to echo. When
+the program in front is slower than 30 ms, foretype draws your keys itself, then checks
+them against the real echo.
 
 - Only interactive terminals are wrapped. `-c` commands, scripts and pipes get your real
   shell directly.
+- ssh, your shell config and the server are untouched. Root is only needed to install
+  and uninstall.
 - Predicts only after the program has echoed on that line, so passwords stay hidden.
 - Asks the terminal for its cursor position (`ESC [6n`) before drawing.
 - Restores the cursor before forwarding output, so the program's bytes land untouched.
 - Takes a prediction back if the echo differs, or if none arrives within about three
   round trips (750 ms at least, 5 s at most).
 - Pauses on Enter, editing keys, paste and resize.
-
-## foretype vs mosh
-
-- No server component. mosh needs `mosh-server` on the remote and open UDP ports;
-  foretype runs only on your machine, and ssh stays ssh.
-- Works on whatever runs in your local terminal: ssh, `kubectl exec`, `docker exec`,
-  a serial console, a coding agent.
-- mosh roams between networks and survives sleep and dropped connections. foretype
-  does neither; if ssh drops, it drops.
-- mosh syncs screen state, so it can skip stale output on a slow link. foretype forwards
-  every byte, so it hides typing lag, not output lag.
+- Hides typing lag, not network lag.
 
 ## License
 
