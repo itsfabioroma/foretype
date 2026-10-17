@@ -16,6 +16,7 @@ mod session;
 mod shell;
 mod ui;
 
+use std::ffi::OsString;
 use std::io;
 use std::os::fd::{AsFd, BorrowedFd};
 use std::path::Path;
@@ -50,6 +51,10 @@ const ENVIRONMENT: &[(&str, &str)] = &[
     (
         "FORETYPE_UNDERLINE=1",
         "underline characters the remote side has not echoed yet",
+    ),
+    (
+        "FORETYPE_GHOSTTY=off",
+        "do not load Ghostty's zsh integration in the wrapped shell",
     ),
     ("FORETYPE_LOG=<file>", "write a debug log"),
 ];
@@ -130,12 +135,17 @@ pub enum RunError {
 }
 
 /// Runs `program` on a pty of its own and proxies the terminal until it exits.
-pub fn run(program: &Path, arg0: &str, args: &[String]) -> Result<ExitCode, RunError> {
+pub fn run(
+    program: &Path,
+    arg0: &str,
+    args: &[String],
+    env: &[(OsString, OsString)],
+) -> Result<ExitCode, RunError> {
     let stdin = io::stdin();
     let stdout = io::stdout();
     let size = pty::winsize(stdout.as_fd()).or_else(|| pty::winsize(stdin.as_fd()));
     let raw = pty::RawMode::enable(stdin.as_fd()).map_err(RunError::Setup)?;
-    let child = match pty::spawn(program, arg0, args, size, Some(raw.original())) {
+    let child = match pty::spawn(program, arg0, args, env, size, Some(raw.original())) {
         Ok(child) => child,
         Err(error) => {
             drop(raw);

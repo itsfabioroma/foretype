@@ -1,5 +1,6 @@
 //! Running the real ssh on a pseudo-terminal, and the local terminal's raw mode.
 
+use std::ffi::OsString;
 use std::io;
 use std::os::fd::{AsFd, AsRawFd, BorrowedFd, OwnedFd};
 use std::os::unix::process::CommandExt as _;
@@ -42,6 +43,7 @@ pub fn spawn(
     program: &std::path::Path,
     arg0: &str,
     args: &[String],
+    env: &[(OsString, OsString)],
     size: Option<Winsize>,
     attrs: Option<&Termios>,
 ) -> io::Result<Pty> {
@@ -58,6 +60,7 @@ pub fn spawn(
         // Programs that read $SHELL see the real shell, not foretype.
         .env("SHELL", program)
         .env(crate::shell::TTY_VAR, tty)
+        .envs(env.iter().map(|(name, value)| (name, value)))
         .stdin(Stdio::from(pty.slave.try_clone()?))
         .stdout(Stdio::from(pty.slave.try_clone()?))
         .stderr(Stdio::from(pty.slave));
@@ -136,6 +139,7 @@ mod tests {
             std::path::Path::new("/bin/sh"),
             "sh",
             &["-c".to_owned(), script.to_owned()],
+            &[],
             None,
             None,
         )
@@ -155,5 +159,32 @@ mod tests {
         let text = String::from_utf8_lossy(&output);
         assert!(text.contains("checked"), "{text}");
         assert!(!text.contains("leaked"), "{text}");
+    }
+
+    #[test]
+    fn the_shell_gets_the_extra_environment() {
+        let mut pty = spawn(
+            std::path::Path::new("/bin/sh"),
+            "sh",
+            &["-c".to_owned(), "echo \"[$FORETYPE_TEST_VAR]\"".to_owned()],
+            &[("FORETYPE_TEST_VAR".into(), "a b".into())],
+            None,
+            None,
+        )
+        .unwrap();
+        let mut output = Vec::new();
+        let mut buffer = [0u8; 4096];
+        while let Ok(n) = nix::unistd::read(&pty.master, &mut buffer) {
+            if n == 0 {
+                break;
+            }
+            output.extend_from_slice(&buffer[..n]);
+            if output.contains(&b']') {
+                break;
+            }
+        }
+        let _ = pty.child.wait();
+        let text = String::from_utf8_lossy(&output);
+        assert!(text.contains("[a b]"), "{text}");
     }
 }
